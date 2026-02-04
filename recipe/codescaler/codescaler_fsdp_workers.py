@@ -269,9 +269,6 @@ class CodeScalerRewardModelWorker(Worker, DistProfilerExtension):
         rm_attention_mask = []
 
         for i in range(data.batch.batch_size[0]):
-            # extract raw prompt
-            # chat: list = list(data.non_tensor_batch["raw_prompt"][i])
-
             # extract response
             response_ids = data.batch["responses"][i]
             response_length = response_ids.shape[-1]
@@ -283,8 +280,6 @@ class CodeScalerRewardModelWorker(Worker, DistProfilerExtension):
             # remove bos and eos
             response = response.replace(src_tokenizer.eos_token, "")
 
-
-            # prompt = f"<Correctness>\n"
             if isinstance(data[i].non_tensor_batch['raw_prompt'], list):
                 prompt = data[i].non_tensor_batch['raw_prompt'][0]['content']
             elif isinstance(data[i].non_tensor_batch['raw_prompt'], str):
@@ -298,8 +293,6 @@ class CodeScalerRewardModelWorker(Worker, DistProfilerExtension):
                 {"role": "user", "content": prompt},
                 {"role": "assistant", "content": response}
             ]
-
-            # chat.append({"role": "assistant", "content": response})
 
             prompt_with_chat_template = target_tokenizer.apply_chat_template(
                 chat, add_generation_prompt=False, tokenize=False

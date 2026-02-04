@@ -1,7 +1,7 @@
 #!/bin/bash
-# Venus GRPO Correctness Reward Model Training Script
+# CodeScaler GRPO Correctness Reward Model Training Script
 # This script trains a model using GRPO (Group Relative Policy Optimization) algorithm
-# with Venus correctness reward model
+# with CodeScaler reward model
 
 set -x
 ray stop
@@ -15,10 +15,9 @@ val_data=[$(pwd)/datasets/Evaluation/LiveCodeBench.parquet]
 # ============================================================================
 # MODEL CONFIGURATION
 # ============================================================================
-# model_name=/share/zhuxiao/models/Qwen2.5-Coder-7B/models--Qwen--Qwen2.5-Coder-7B/snapshots/0396a76181e127dfc13e5c5ec48a8cee09938b02
-model_name=/share/zhuxiao/models/Qwen3-8B-Base/models--Qwen--Qwen3-8B-Base/snapshots/49e3418fbbbca6ecbdf9608b4d22e5a407081db4
+model_name=Qwen/Qwen3-8B-Base
 model_pretty_name=Qwen3-8B-Base
-rm_path=/share/zhouxinyu/kuaishou_Code/DeepCoder-QuestionCode-Qwen3-8b-base-RLVR-correctness_0.3UnalignedSamples_reward_models/Skywork-Reward-V2-Qwen3-8B_3
+rm_path=LARK-Lab/CodeScaler-8B
 rm_pretty_name=CodeScaler-8B
 # ============================================================================
 # TRAINING ALGORITHM CONFIGURATION

@@ -39,15 +39,15 @@
 
 ## Datasets
 
-- [CodeScalerPair-52K](https://huggingface.co/datasets/LARK-Lab/CodeScalerPair-52K): We construct high-quality preference data from on-policy training trajectories.
+- [CodeScalerPair-51K](https://huggingface.co/datasets/LARK-Lab/CodeScalerPair-51K): We construct high-quality preference data from on-policy training trajectories.
 
 ## Models
  We release CodeScaler at different scales from 1.7B, 4B to 8B.
- - [CodeScaler-1.7B](https://huggingface.co/LARK-Lab/CodeScaler-1.7B): A reward model trained on CodeScalerPair-52K from Skywork/Skywork-Reward-V2-Qwen3-1.7B.
+ - [CodeScaler-1.7B](https://huggingface.co/LARK-Lab/CodeScaler-1.7B): A reward model trained on CodeScalerPair-51K from Skywork/Skywork-Reward-V2-Qwen3-1.7B.
 
-  - [CodeScaler-4B](https://huggingface.co/LARK-Lab/CodeScaler-4B): A reward model trained on CodeScalerPair-52K from Skywork/Skywork-Reward-V2-Qwen3-4B.
+  - [CodeScaler-4B](https://huggingface.co/LARK-Lab/CodeScaler-4B): A reward model trained on CodeScalerPair-51K from Skywork/Skywork-Reward-V2-Qwen3-4B.
 
-   - [CodeScaler-8B](https://huggingface.co/LARK-Lab/CodeScaler-8B): A reward model trained on CodeScalerPair-52K from Skywork/Skywork-Reward-V2-Qwen3-8B.
+   - [CodeScaler-8B](https://huggingface.co/LARK-Lab/CodeScaler-8B): A reward model trained on CodeScalerPair-51K from Skywork/Skywork-Reward-V2-Qwen3-8B.
 
 ## Quick Start
 
@@ -77,25 +77,21 @@ python data/prepare_deepcoder.py
 # prepare evaluation dataset
 python data/download_dataset.py
 python data/prepare_evaluation.py
-
 ```
 
 ### Training
 
 ```bash
-
+wandb login
 # start training
 bash scripts/train.sh
-
 ```
 
 ### Evaluation
 
 ```bash
-
 # start eval
 bash scripts/eval.sh
-
 ```
 
 ### Use CodeScaler for RM Scoring
@@ -103,10 +99,7 @@ bash scripts/eval.sh
 import torch
 from transformers import AutoTokenizer, AutoModelForSequenceClassification
 
-
-
 device = "cuda" if torch.cuda.is_available() else "cpu"
-
 model_path = 'LARK-Lab/CodeScaler-8B'
 
 tokenizer = AutoTokenizer.from_pretrained(model_path)

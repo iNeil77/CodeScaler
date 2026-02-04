@@ -115,5 +115,5 @@ class AceCodeRM(Qwen2ForCausalLM):
             return (rm_scores, base_model_output.past_key_values)
         else:
             return ModelOutput(
-                logits=value  # 保持下游期望的 shape
+                logits=value  
             )

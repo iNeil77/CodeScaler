@@ -112,7 +112,7 @@ def main():
     ds_all.append(ds_test_lcbv5)
     ds_test_lcbv5.to_parquet("./datasets/Evaluation/LiveCodeBench.parquet")
 
-    dataset_names = {'CodeContests': ds_codecontests, 
+    dataset_namesc = {'CodeContests': ds_codecontests, 
                      'CodeForces': ds_codeforces,
                      'LiveBench': ds_livebench, 
                      'MBPP': ds_mbpp}
