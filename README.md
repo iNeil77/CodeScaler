@@ -8,6 +8,18 @@
       src="https://img.shields.io/badge/Paper-Arxiv-red?logo=arxiv&logoColor=red"
       alt="CodeScaler Paper on arXiv"
     />
+  <a href="https://github.com/LARK-AI-Lab/CodeScaler">
+    <img 
+        src="https://img.shields.io/badge/GitHub-Code-181717?logo=github&logoColor=white" 
+        alt="GitHub Code"
+    />
+  </a>
+  <a href="https://lark-ai-lab.github.io/codescaler.github.io/">
+    <img 
+        src="https://img.shields.io/badge/GitHub-Page-4078c0?logo=github&logoColor=white" 
+        alt="GitHub Page"
+    />
+  </a>
   <a href="https://huggingface.co/collections/LARK-Lab/codescaler">
     <img 
         src="https://img.shields.io/badge/Datasets-Hugging%20Face%20Data-orange?logo=huggingface&logoColor=yellow" 
@@ -20,10 +32,11 @@
         alt="CodeScaler on Hugging Face"
     />
   </a>
+
   
 </p>
 
-## Overview
+## 📊 Overview
 
 <p align="center">
   <img src="assets/overview.png"  alt="Overview of models"  width="800">
@@ -35,13 +48,17 @@
 
 - At inference time, **CodeScaler** serves as an effective test-time scaling method, achieving performance comparable to unit test approaches while providing a **10×** reduction in latency. Moreover, **CodeScaler** surpasses existing reward models on RM-Bench not only in the code domain but also in general and reasoning domains.
 
-## News
+## 📰 News
 
-## Datasets
+- **[2024-02]** 🎉 We have released the [code](https://github.com/LARK-AI-Lab/CodeScaler), [dataset](https://huggingface.co/collections/LARK-Lab/codescaler) and [models](https://huggingface.co/collections/LARK-Lab/codescaler) for CodeScaler!
+
+<!-- - **[2024-02]** 📝 CodeScaler paper is available on arXiv. -->
+
+## 📚 Datasets
 
 - [CodeScalerPair-51K](https://huggingface.co/datasets/LARK-Lab/CodeScalerPair-51K): We construct high-quality preference data from on-policy training trajectories.
 
-## Models
+## 🤖 Models
  We release CodeScaler at different scales from 1.7B, 4B to 8B.
  - [CodeScaler-1.7B](https://huggingface.co/LARK-Lab/CodeScaler-1.7B): A reward model trained on CodeScalerPair-51K from Skywork/Skywork-Reward-V2-Qwen3-1.7B.
 
@@ -49,52 +66,79 @@
 
    - [CodeScaler-8B](https://huggingface.co/LARK-Lab/CodeScaler-8B): A reward model trained on CodeScalerPair-51K from Skywork/Skywork-Reward-V2-Qwen3-8B.
 
-## Quick Start
+## 🚀 Quick Start
 
-### Environment
+### ⚙️ Environment Setup
+
+**Step 1: Clone the repository**
 
 ```bash
 git clone https://github.com/LARK-AI-Lab/CodeScaler.git
 cd CodeScaler
+```
 
+**Step 2: Create a conda environment**
+
+```bash
 conda create -n CodeScaler python==3.10.19
 conda activate CodeScaler
-pip install -r requirements.txt
+```
 
+**Step 3: Install dependencies**
+
+```bash
+pip install -r requirements.txt
+```
+
+**Step 4: Install FlashAttention**
+
+```bash
 pip install --no-cache-dir \
   https://github.com/Dao-AILab/flash-attention/releases/download/v2.7.4.post1/\
 flash_attn-2.7.4.post1+cu12torch2.6cxx11abiFALSE-cp310-cp310-linux_x86_64.whl
-
 ```
 
-You can also install [FlashAttention](https://github.com/Dao-AILab/flash-attention) based on your version of PyTorch and CUDA.
+> 💡 **Tip:** You can also install [FlashAttention](https://github.com/Dao-AILab/flash-attention) based on your specific PyTorch and CUDA versions for optimal performance.
 
-### Data Preparation
+### 📦 Data Preparation
+
+Prepare the training and evaluation datasets:
+
 ```bash
-# prepare training dataset
+# Prepare training dataset
 python data/prepare_deepcoder.py
 
-# prepare evaluation dataset
+# Download and prepare evaluation dataset
 python data/download_dataset.py
 python data/prepare_evaluation.py
 ```
 
-### Training
+> 💡 **Tip:** The training dataset is based on DeepCoder training datasets, and evaluation includes multiple coding benchmarks.
+
+### 🏋️ Training
+
+Train Qwen3-8B-Base on DeepCoder dataset using CodeScaler as reward model:
 
 ```bash
+# Login to Weights & Biases for experiment tracking
 wandb login
-# start training
+
+# Start training
 bash scripts/train.sh
 ```
 
-### Evaluation
+> 💡 **Tip:** Check `scripts/train.sh` to customize hyperparameters such as learning rate, batch size, and training epochs.
+
+### 📈 Evaluation
+
+Evaluate your trained model:
 
 ```bash
-# start eval
+# Run evaluation on benchmarks
 bash scripts/eval.sh
 ```
 
-### Use CodeScaler for RM Scoring
+### 💻 Use CodeScaler for RM Scoring
 ````python
 import torch
 from transformers import AutoTokenizer, AutoModelForSequenceClassification
@@ -119,6 +163,7 @@ Output:
 ```
 """
 
+# Correct solution using prefix sum approach
 program_correct = """\
 from collections import defaultdict
 
@@ -139,6 +184,7 @@ def subarraySum(nums, k):
     return count
 """
 
+# Incorrect solution using sliding window (fails on negative numbers)
 program_wrong = """\
 def subarraySum(nums, k):
     left = 0
@@ -198,9 +244,8 @@ print("RM Scores:", scores)
 # RM Scores: [6.5424089431762695, -0.0312652587890625]
 ````
 
-## Citation
+## 📝 Citation
 ```
 
 ```
 
-## Acknowledgement
