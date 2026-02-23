@@ -48,16 +48,13 @@
 
 - At inference time, **CodeScaler** serves as an effective test-time scaling method, achieving performance comparable to unit test approaches while providing a **10×** reduction in latency. Moreover, **CodeScaler** surpasses existing reward models on RM-Bench not only in the code domain but also in general and reasoning domains.
 
-<<<<<<< HEAD
-## 📰 News
-=======
+
 ## News
-- [2026/2/23] We release the CodeScaler Paper, along with the Code, Models and Datasets!
->>>>>>> 936a00f (update README)
+- **[2024-02]** 🎉 We have released the CodeScaler [Paper](https://arxiv.org/abs/2602.17684) on Arxiv!
+
 
 - **[2024-02]** 🎉 We have released the [code](https://github.com/LARK-AI-Lab/CodeScaler), [dataset](https://huggingface.co/collections/LARK-Lab/codescaler) and [models](https://huggingface.co/collections/LARK-Lab/codescaler) for CodeScaler!
 
-<!-- - **[2024-02]** 📝 CodeScaler paper is available on arXiv. -->
 
 ## 📚 Datasets
 
@@ -249,13 +246,7 @@ print("RM Scores:", scores)
 # RM Scores: [6.5424089431762695, -0.0312652587890625]
 ````
 
-<<<<<<< HEAD
-## 📝 Citation
-```
 
-```
-
-=======
 ## Citation
 If you find our work helpful, please consider citing:
 ```
@@ -270,5 +261,3 @@ If you find our work helpful, please consider citing:
 }
 ```
 
-<!-- ## Acknowledgement -->
->>>>>>> 936a00f (update README)
