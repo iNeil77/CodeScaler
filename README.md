@@ -50,10 +50,10 @@
 
 
 ## News
-- **[2024-02]** 🎉 We have released the CodeScaler [Paper](https://arxiv.org/abs/2602.17684) on Arxiv!
+- **[2026-02]** 🎉 We have released the CodeScaler [Paper](https://arxiv.org/abs/2602.17684) on Arxiv!
 
 
-- **[2024-02]** 🎉 We have released the [code](https://github.com/LARK-AI-Lab/CodeScaler), [dataset](https://huggingface.co/collections/LARK-Lab/codescaler) and [models](https://huggingface.co/collections/LARK-Lab/codescaler) for CodeScaler!
+- **[2026-02]** 🎉 We have released the [code](https://github.com/LARK-AI-Lab/CodeScaler), [dataset](https://huggingface.co/collections/LARK-Lab/codescaler) and [models](https://huggingface.co/collections/LARK-Lab/codescaler) for CodeScaler!
 
 
 ## 📚 Datasets
