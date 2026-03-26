@@ -38,7 +38,7 @@ def extract_code_from_model_test(model_response: str):
     code = code_blocks[-1].strip()
     return code
 
-def extract_code_from_model(model_response: str, check_ast=False):
+def extract_code_from_model(model_response: str, check_ast=True):
     """
     Extracts the code from a Markdown-style code block in an LLM output.
 
