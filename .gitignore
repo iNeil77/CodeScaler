@@ -1,0 +1,20 @@
+# Python
+__pycache__/
+*.pyc
+.env
+
+# ckpt
+checkpoints/
+eval/
+
+# data
+datasets/
+*.json
+
+# log
+logs/
+outputs/
+verl_step_records/
+wandb/
+
+acecoder.py
