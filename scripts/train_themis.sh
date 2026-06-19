@@ -1,7 +1,26 @@
 #!/bin/bash
-# CodeScaler GRPO Correctness Reward Model Training Script
+# Themis GRPO Reward Model Training Script
 # This script trains a model using GRPO (Group Relative Policy Optimization) algorithm
-# with CodeScaler reward model
+# with a Themis scalar reward model from the Themis suite:
+#   project-themis/Themis-RM-{0.6B,1.7B,4B,8B,14B,32B}
+#
+# Notes on the reward model wiring:
+#  * `reward_model.reward_manager=codescaler` keeps the CodeScalerRewardModelWorker, which
+#    is the worker that contains the reward-model architecture dispatch. The Themis
+#    architecture is selected automatically because `reward_model.model.path` contains
+#    "themis" (case-insensitive substring match): Themis models are loaded as
+#    AutoModelForSequenceClassification (num_labels=1, Qwen3 backbone) and the pooled
+#    scalar logit is read directly.
+#  * The worker prepends the Themis functional-correctness system prompt and applies the
+#    reward model's own chat template (system -> user -> assistant), matching the
+#    authoritative Themis inference script:
+#    https://github.com/iNeil77/Themis/blob/main/Evaluation/Evaluation_Scripts/coderewardbench-seqcls.py
+#  * `reward_model.model.input_tokenizer` defaults to the policy tokenizer (so the
+#    decode -> code-extraction -> re-template path runs); leave it set. The sequence
+#    classifier pools at the final token from the attention mask, so right padding is
+#    required (already the default in _switch_chat_template).
+#
+# To train against the CodeScaler reward model instead, use scripts/train_codescaler.sh.
 
 set -x
 ray stop
@@ -17,8 +36,10 @@ val_data=[$(pwd)/datasets/Evaluation/LiveCodeBench.parquet]
 # ============================================================================
 model_name=Qwen/Qwen3-8B-Base
 model_pretty_name=Qwen3-8B-Base
-rm_path=LARK-Lab/CodeScaler-8B
-rm_pretty_name=CodeScaler-8B
+# Any size from the Themis suite works; the "themis" substring drives architecture
+# selection. Larger sizes (14B/32B) may require more reward-model GPUs / offloading.
+rm_path=project-themis/Themis-RM-8B
+rm_pretty_name=Themis-RM-8B
 # ============================================================================
 # TRAINING ALGORITHM CONFIGURATION
 # ============================================================================
@@ -68,7 +89,7 @@ action_stop_tokens=''
 max_turns=0
 kl_loss_coef=0.0
 kl_coef=0
-entropy_coeff=0 
+entropy_coeff=0
 kl_loss_type=low_var_kl
 lr=1e-6
 
@@ -80,7 +101,7 @@ export NCCL_DEBUG=INFO
 export VLLM_USE_V1=1
 export NCCL_NVLS_ENABLE=0
 
-export WANDB_PROJECT="DeepCoder"
+export WANDB_PROJECT="DeepCoder-Themis"
 
 TIMESTAMP=$(date +"%Y%m%d_%H%M%S")
 NUM_GPUS=8

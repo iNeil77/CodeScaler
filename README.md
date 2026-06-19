@@ -119,17 +119,28 @@ python data/prepare_evaluation.py
 
 ### 🏋️ Training
 
-Train Qwen3-8B-Base on DeepCoder dataset using CodeScaler as reward model:
+Train Qwen3-8B-Base on the DeepCoder dataset using a scalar reward model. Two
+reward-model families are supported out of the box, each with its own script:
 
 ```bash
 # Login to Weights & Biases for experiment tracking
 wandb login
 
-# Start training
-bash scripts/train.sh
+# Train with the CodeScaler-8B reward model
+bash scripts/train_codescaler.sh
+
+# ...or train with a Themis reward model (project-themis/Themis-RM-{0.6B,1.7B,4B,8B,14B,32B})
+bash scripts/train_themis.sh
 ```
 
-> 💡 **Tip:** Check `scripts/train.sh` to customize hyperparameters such as learning rate, batch size, and training epochs.
+The two scripts share the same recipe and differ only in `reward_model.model.path`.
+The reward-model architecture is selected automatically from that path inside
+`CodeScalerRewardModelWorker` (case-insensitive substring match on `codescaler` /
+`themis` / `acecoderm`); an unrecognized path raises a `ValueError`. The Themis
+models are scored with their functional-correctness system prompt and their own chat
+template (see `scripts/train_themis.sh` for details).
+
+> 💡 **Tip:** Check the `scripts/train_*.sh` files to customize hyperparameters such as learning rate, batch size, and training epochs.
 
 ### 📈 Evaluation
 
