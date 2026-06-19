@@ -167,7 +167,7 @@ export EXP_NAME="${dataset_name}-${reward_manager}-${model_pretty_name}-${rm_pre
 run_name=$EXP_NAME
 
 export VERL_RUN_ID=$run_name
-export WANDB_PROJECT="DeepCoder-Themis-32B"
+export WANDB_PROJECT="LibraRM"
 
 TIMESTAMP=$(date +"%Y%m%d_%H%M%S")
 ROOT=$(pwd)

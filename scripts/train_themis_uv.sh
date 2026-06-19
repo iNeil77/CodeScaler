@@ -124,7 +124,7 @@ export NCCL_DEBUG=INFO
 export VLLM_USE_V1=1
 export NCCL_NVLS_ENABLE=0
 
-export WANDB_PROJECT="DeepCoder-Themis"
+export WANDB_PROJECT="LibraRM"
 
 TIMESTAMP=$(date +"%Y%m%d_%H%M%S")
 NUM_GPUS=8
