@@ -25,6 +25,38 @@ def fetch_live_code_bench_system_prompt(prompt: str, starter_code: str | None = 
     return prompt
 
 
+# Stdin/stdout system prompt, applied as a separate `system` turn to the taco and
+# primeintellect sources so they look like the LiveCodeBench-style prompt. Same
+# content as fetch_live_code_bench_system_prompt's no-starter-code branch, but with
+# the problem text kept out (it goes in the `user` turn). Tells the model to read
+# stdin / write stdout and to emit its code in a single ```python``` markdown block.
+STDIN_SYSTEM_PROMPT = (
+    LCB_SYSTEM_MESSAGE_GENERIC
+    + "\n\n"
+    + f"### Format: {LCB_FORMATTING_WITHOUT_STARTER_CODE}\n"
+    + "```python\n# YOUR CODE HERE\n```\n\n"
+    + "### Answer: (use the provided format with backticks)"
+)
+
+# Every primeintellect problem begins with this line (100% of the split); it is
+# redundant once the LCB system prompt is added, so strip it from the user turn.
+_PRIMEINTELLECT_PREAMBLE = "Solve the following coding problem using the programming language python:"
+
+
+def _strip_primeintellect_preamble(question: str) -> str:
+    stripped = question.lstrip()
+    if stripped.startswith(_PRIMEINTELLECT_PREAMBLE):
+        return stripped[len(_PRIMEINTELLECT_PREAMBLE):].lstrip()
+    return question
+
+
+def _taco_is_stdin(item) -> bool:
+    """A taco problem is stdin/stdout style unless its tests carry a `fn_name`
+    (function-call graded). We keep only the stdin/stdout ones."""
+    tests = json.loads(item["tests"])
+    return not (isinstance(tests, dict) and tests.get("fn_name"))
+
+
 def _build_example(item, data_source):
     """Transform one raw record into the training schema. Pure function of (item,
     data_source) so it is safe to run under datasets.map(num_proc=...)."""
@@ -43,18 +75,34 @@ def _build_example(item, data_source):
 
     tests = json.dumps(tests)
 
+    # System turn: lcbv5 keeps its existing in-line formatting (prepended into the
+    # user turn, possibly with starter code). taco and primeintellect instead get a
+    # separate `system` turn with the stdin/stdout + markdown-block instruction, so
+    # the prompt looks like LiveCodeBench. primeintellect's redundant leading
+    # "Solve ... python:" line is stripped from the user turn.
+    system_content = None
     if data_source == 'lcbv5':
         starter_code = item.get("starter_code", None)
         question = fetch_live_code_bench_system_prompt(question, starter_code)
+    elif data_source in ('taco', 'primeintellect'):
+        if data_source == 'primeintellect':
+            question = _strip_primeintellect_preamble(question)
+        system_content = STDIN_SYSTEM_PROMPT
 
     if isinstance(question, dict):
         question = json.dumps(question)
 
+    # `prompt` is what the policy sees (system + user). `raw_prompt` is the
+    # user-only problem text: the reward-model worker reads raw_prompt[0]['content']
+    # as the problem, so the system instruction must NOT leak into raw_prompt.
+    user_msg = {"role": "user", "content": question}
+    prompt = [{"role": "system", "content": system_content}, user_msg] if system_content else [user_msg]
+
     return {
         "data_source": data_source,
         "question": ori_question,
-        "prompt": [{"role": "user", "content": question}],
-        "raw_prompt": [{"role": "user", "content": question}],
+        "prompt": prompt,
+        "raw_prompt": [user_msg],
         "ability": "code",
         "reward_model": {"style": "rule", "ground_truth": tests},
     }
@@ -63,6 +111,12 @@ def _build_example(item, data_source):
 def _map_source(ds, data_source):
     """Map a single source dataset to the target schema in parallel, dropping the
     original columns so the per-source schemas line up for concatenation."""
+    # taco mixes stdin/stdout and function-call (fn_name) problems. We only train on
+    # stdin/stdout, so drop the function-call ones before mapping.
+    if data_source == 'taco':
+        n_before = len(ds)
+        ds = ds.filter(_taco_is_stdin, num_proc=_num_proc(len(ds)), desc="Filtering taco -> stdin only")
+        print(f"  taco: kept {len(ds)}/{n_before} stdin/stdout problems (dropped {n_before - len(ds)} fn_name)")
     return ds.map(
         lambda item: _build_example(item, data_source),
         num_proc=_num_proc(len(ds)),
