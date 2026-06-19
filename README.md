@@ -160,7 +160,17 @@ bash scripts/train_themis.sh
 ```
 
 > 💡 With the uv setup, either activate the venv first (`source .venv/bin/activate`)
-> or run the script under uv (`uv run bash scripts/train_codescaler.sh`).
+> or run the script under uv (`uv run bash scripts/train_codescaler.sh`). For a
+> one-command path, `scripts/train_uv.sh` runs `uv sync --frozen` and then launches
+> a recipe inside the uv environment:
+>
+> ```bash
+> bash scripts/train_uv.sh                       # CodeScaler-8B (default)
+> bash scripts/train_uv.sh themis                # Themis, single node
+> bash scripts/train_uv.sh themis-32b-multinode  # Themis-RM-32B, 4 nodes
+> # extra args are forwarded as Hydra overrides, e.g.:
+> bash scripts/train_uv.sh codescaler trainer.total_training_steps=10
+> ```
 
 The two scripts share the same recipe and differ only in `reward_model.model.path`.
 The reward-model architecture is selected automatically from that path inside
