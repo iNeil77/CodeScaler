@@ -63,9 +63,19 @@ export RAY_ENABLE_UV_RUN_RUNTIME_ENV=0
 echo ">> uv sync --frozen"
 uv sync --frozen
 
+# Always tear down the Ray cluster on exit (success, failure, or Ctrl-C). The recipe
+# scripts start `ray start --head` but their trailing cleanup (`pkill -P -9
+# $server_pid`) is broken (unset var), so without this the head + worker processes
+# leak and keep holding GPUs/RAM after the run ends.
+cleanup() {
+    echo ">> ray stop (cleanup)"
+    uv run --frozen --no-sync ray stop --force >/dev/null 2>&1 || true
+}
+trap cleanup EXIT INT TERM
+
 # 2. Launch the chosen recipe inside the uv environment. `uv run` puts .venv/bin on
 #    PATH for the bash subprocess, so the `python -m recipe...` / `ray` / `wandb`
 #    calls inside $TARGET use the locked interpreter and dependencies.
-#    --no-sync because step 1 already synced.
+#    --no-sync because step 1 already synced. Not `exec`, so the trap above runs.
 echo ">> uv run bash $TARGET $*"
-exec uv run --frozen --no-sync bash "$TARGET" "$@"
+uv run --frozen --no-sync bash "$TARGET" "$@"

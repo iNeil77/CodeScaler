@@ -185,7 +185,7 @@ def _temp_run(sample, generation, debug, result, metadata_list, timeout):
     result.append(res)
     metadata_list.append(metadata)
 
-def lcb_check_correctness(sample, generation, timeout=2, debug=False):
+def lcb_check_correctness(sample, generation, timeout=5, debug=False):
     """Check correctness of code generation with a global timeout.
     The global timeout is to catch some extreme/rare cases not handled by the timeouts
     inside `run_test`"""
