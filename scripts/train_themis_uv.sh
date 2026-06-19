@@ -86,7 +86,7 @@ strategy="fsdp"
 # ============================================================================
 # BATCH SIZE AND PARALLELIZATION CONFIGURATION
 # ============================================================================
-n=8
+n=16
 batch_size=128
 ppo_mini_batch_size=64
 ppo_micro_batch_size=16
