@@ -13,4 +13,12 @@ logs/
 verl_step_records/
 outputs/
 wandb/
+checkpoints/
+eval/
 *.log
+
+# Downloaded/generated datasets (produced by scripts/prepare_data*.sh)
+datasets/
+data/LiveBench.json
+data/CodeContests.json
+data/CodeForces.json

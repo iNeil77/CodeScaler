@@ -1,32 +1,32 @@
 #!/bin/bash
-# Themis GRPO Reward Model Training Script
+# CodeScaler GRPO Correctness Reward Model Training Script
 # This script trains a model using GRPO (Group Relative Policy Optimization) algorithm
-# with a Themis scalar reward model from the Themis suite:
-#   project-themis/Themis-RM-{0.6B,1.7B,4B,8B,14B,32B}
+# with the CodeScaler-8B scalar reward model (LARK-Lab/CodeScaler-8B).
 #
-# Notes on the reward model wiring:
-#  * `reward_model.reward_manager=codescaler` keeps the CodeScalerRewardModelWorker, which
-#    is the worker that contains the reward-model architecture dispatch. The Themis
-#    architecture is selected automatically because `reward_model.model.path` contains
-#    "themis" (case-insensitive substring match): Themis models are loaded as
-#    AutoModelForSequenceClassification (num_labels=1, Qwen3 backbone) and the pooled
-#    scalar logit is read directly.
-#  * The worker prepends the Themis functional-correctness system prompt and applies the
-#    reward model's own chat template (system -> user -> assistant), matching the
-#    authoritative Themis inference script:
-#    https://github.com/iNeil77/Themis/blob/main/Evaluation/Evaluation_Scripts/coderewardbench-seqcls.py
-#  * `reward_model.model.input_tokenizer` defaults to the policy tokenizer (so the
-#    decode -> code-extraction -> re-template path runs); leave it set. The sequence
-#    classifier pools at the final token from the attention mask, so right padding is
-#    required (already the default in _switch_chat_template).
-#
-# To train against the CodeScaler reward model instead, use scripts/train_codescaler.sh.
+# The reward model architecture is selected automatically from `reward_model.model.path`
+# inside CodeScalerRewardModelWorker (case-insensitive substring match): a path
+# containing "codescaler" is loaded as a token-classification head and scored at the
+# last valid token. To train against a Themis reward model instead, use
+# scripts/train_themis.sh.
 
 set -x
 
-# This script runs with whatever Python environment is already active (conda, pip,
-# venv, ...), exactly as before. It does NOT manage dependencies. For a self-contained
-# uv-managed run (auto env sync + activation), use scripts/train_themis_uv.sh.
+# ============================================================================
+# UV ENVIRONMENT BOOTSTRAP (self-contained; run from anywhere)
+# ============================================================================
+# Resolve the repo root from this script's location and create/activate the locked
+# uv environment, so `python`, `ray`, and `wandb` below resolve to the project .venv.
+# Activating the venv (instead of `uv run`) also avoids Ray's uv runtime-env hook,
+# which errors on the recipe's working_dir=None.
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+cd "$REPO_ROOT"
+if ! command -v uv >/dev/null 2>&1; then
+    echo "error: uv not found. Install it first: curl -LsSf https://astral.sh/uv/install.sh | sh" >&2
+    exit 1
+fi
+uv sync --frozen
+source .venv/bin/activate
 
 # Always tear down the Ray cluster on exit (success, failure, or Ctrl-C), so idle
 # Ray workers don't leak and keep holding GPUs/RAM after the run ends.
@@ -46,10 +46,8 @@ val_data=[$(pwd)/datasets/Evaluation/LiveCodeBench.parquet]
 # ============================================================================
 model_name=Qwen/Qwen3-8B-Base
 model_pretty_name=Qwen3-8B-Base
-# Any size from the Themis suite works; the "themis" substring drives architecture
-# selection. Larger sizes (14B/32B) may require more reward-model GPUs / offloading.
-rm_path=project-themis/Themis-RM-8B
-rm_pretty_name=Themis-RM-8B
+rm_path=LARK-Lab/CodeScaler-8B
+rm_pretty_name=CodeScaler-8B
 # ============================================================================
 # TRAINING ALGORITHM CONFIGURATION
 # ============================================================================
@@ -99,7 +97,7 @@ action_stop_tokens=''
 max_turns=0
 kl_loss_coef=0.0
 kl_coef=0
-entropy_coeff=0
+entropy_coeff=0 
 kl_loss_type=low_var_kl
 lr=1e-6
 
@@ -111,7 +109,7 @@ export NCCL_DEBUG=INFO
 export VLLM_USE_V1=1
 export NCCL_NVLS_ENABLE=0
 
-export WANDB_PROJECT="DeepCoder-Themis"
+export WANDB_PROJECT="DeepCoder"
 
 TIMESTAMP=$(date +"%Y%m%d_%H%M%S")
 NUM_GPUS=8

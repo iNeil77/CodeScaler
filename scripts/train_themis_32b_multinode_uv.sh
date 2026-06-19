@@ -30,9 +30,22 @@
 
 set -x
 
-# This script runs with whatever Python environment is already active (conda, pip,
-# venv, ...) on each node, exactly as before. It does NOT manage dependencies. For a
-# self-contained uv-managed run, use scripts/train_themis_32b_multinode_uv.sh.
+# ============================================================================
+# UV ENVIRONMENT BOOTSTRAP (self-contained; run from anywhere, on every node)
+# ============================================================================
+# Resolve the repo root from this script's location and create/activate the locked
+# uv environment, so `python`/`ray` resolve to the project .venv. Run this on BOTH
+# the head and the worker nodes. Activating the venv (instead of `uv run`) also
+# avoids Ray's uv runtime-env hook, which errors on the recipe's working_dir=None.
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+cd "$REPO_ROOT"
+if ! command -v uv >/dev/null 2>&1; then
+    echo "error: uv not found. Install it first: curl -LsSf https://astral.sh/uv/install.sh | sh" >&2
+    exit 1
+fi
+uv sync --frozen
+source .venv/bin/activate
 
 # ============================================================================
 # CLUSTER / LAUNCH CONFIGURATION  (override via env)

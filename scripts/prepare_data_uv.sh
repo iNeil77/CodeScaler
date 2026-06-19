@@ -1,17 +1,30 @@
 #!/bin/bash
-# Dataset preparation.
+# Dataset preparation (self-contained; run from anywhere after cloning).
 # =============================================================================
 # Produces the parquet files the training scripts expect:
 #   datasets/DeepCoder/train.parquet            (training data)
 #   datasets/Evaluation/LiveCodeBench.parquet   (validation data)
 #   ... plus datasets/DeepCoder/test.parquet and the other eval benchmarks.
 #
-# Runs with whatever Python environment is already active (conda, pip, venv, ...).
-# It does NOT manage dependencies; the prep scripts use repo-root-relative paths
-# (./data, ./datasets), so run this from the repo root. For a self-contained
-# uv-managed run (auto env sync), use scripts/prepare_data_uv.sh.
+# Like the train scripts, this resolves the repo root, syncs the locked uv
+# environment, and runs everything inside it -- so a fresh clone can just do:
+#   bash scripts/prepare_data.sh
+# then launch training with scripts/train_codescaler.sh / train_themis.sh.
 # =============================================================================
 set -euo pipefail
+
+# Resolve repo root from this script's location and create/activate the locked
+# uv environment, so `python` below resolves to the project .venv. The prep
+# scripts use repo-root-relative paths (./data, ./datasets), so we cd there.
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+cd "$REPO_ROOT"
+if ! command -v uv >/dev/null 2>&1; then
+    echo "error: uv not found. Install it first: curl -LsSf https://astral.sh/uv/install.sh | sh" >&2
+    exit 1
+fi
+uv sync --frozen
+source .venv/bin/activate
 
 # 1. Training set (DeepCoder): pulls the source datasets from the Hub and writes
 #    datasets/DeepCoder/{train,test}.parquet. Independent of the JSON benchmarks.

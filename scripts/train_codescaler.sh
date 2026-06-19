@@ -11,22 +11,9 @@
 
 set -x
 
-# ============================================================================
-# UV ENVIRONMENT BOOTSTRAP (self-contained; run from anywhere)
-# ============================================================================
-# Resolve the repo root from this script's location and create/activate the locked
-# uv environment, so `python`, `ray`, and `wandb` below resolve to the project .venv.
-# Activating the venv (instead of `uv run`) also avoids Ray's uv runtime-env hook,
-# which errors on the recipe's working_dir=None.
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
-cd "$REPO_ROOT"
-if ! command -v uv >/dev/null 2>&1; then
-    echo "error: uv not found. Install it first: curl -LsSf https://astral.sh/uv/install.sh | sh" >&2
-    exit 1
-fi
-uv sync --frozen
-source .venv/bin/activate
+# This script runs with whatever Python environment is already active (conda, pip,
+# venv, ...), exactly as before. It does NOT manage dependencies. For a self-contained
+# uv-managed run (auto env sync + activation), use scripts/train_codescaler_uv.sh.
 
 # Always tear down the Ray cluster on exit (success, failure, or Ctrl-C), so idle
 # Ray workers don't leak and keep holding GPUs/RAM after the run ends.

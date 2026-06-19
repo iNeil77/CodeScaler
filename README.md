@@ -98,9 +98,11 @@ uv sync --frozen
 That's it — there is no separate FlashAttention step (it is pinned in `pyproject.toml`
 to the prebuilt CUDA 12 / torch 2.6 / cp310 wheel). Run any command in the project
 environment by prefixing it with `uv run`, e.g. `uv run python data/prepare_deepcoder.py`.
-The `scripts/train_*.sh` scripts are self-contained: each runs `uv sync --frozen`,
-activates the `.venv`, trains, and tears down its Ray cluster on exit — so you can run
-them directly (`bash scripts/train_codescaler.sh`) without activating anything first.
+The `scripts/*_uv.sh` scripts are self-contained for this setup: each runs
+`uv sync --frozen`, activates the `.venv`, does its work, and tears down its Ray cluster
+on exit — so you can run them directly (`bash scripts/train_codescaler_uv.sh`) without
+activating anything first. (The plain `scripts/*.sh` variants run in whatever
+environment is already active — see *Option B*.)
 
 > 💡 Use `uv sync` (without `--frozen`) only when intentionally changing dependencies;
 > it will update `uv.lock`.
@@ -129,29 +131,26 @@ flash_attn-2.7.4.post1+cu12torch2.6cxx11abiFALSE-cp310-cp310-linux_x86_64.whl
 
 ### 📦 Data Preparation
 
-Prepare the training and evaluation datasets with the self-contained script (it syncs
-the uv environment and runs every step in the right order):
+Every script comes in two flavors:
+- **`scripts/<name>.sh`** — runs in your already-active environment (conda/pip/venv),
+  exactly as the upstream repo did. It does not manage dependencies; run it from the
+  repo root after installing per *Option B* above.
+- **`scripts/<name>_uv.sh`** — self-contained: resolves the repo root, runs
+  `uv sync --frozen`, activates the locked `.venv`, then does the same work. Use this
+  after the *Option A* (uv) setup; no manual activation needed.
+
+Prepare the training and evaluation datasets:
 
 ```bash
-bash scripts/prepare_data.sh
+bash scripts/prepare_data.sh        # active env
+bash scripts/prepare_data_uv.sh     # uv-managed
 ```
 
 This writes `datasets/DeepCoder/train.parquet` (training) and
 `datasets/Evaluation/LiveCodeBench.parquet` (validation) — the files the training
-scripts expect — plus the other evaluation benchmarks.
-
-<details>
-<summary>Or run the steps manually</summary>
-
-```bash
-# Prepare training dataset
-python data/prepare_deepcoder.py
-
-# Download and prepare evaluation datasets (download must run first)
-python data/download_data.py
-python data/prepare_evaluation.py
-```
-</details>
+scripts expect — plus the other evaluation benchmarks. Equivalent to running, from the
+repo root: `python data/prepare_deepcoder.py`, then `python data/download_data.py`,
+then `python data/prepare_evaluation.py`.
 
 > 💡 **Tip:** The training dataset is based on DeepCoder training datasets, and evaluation includes multiple coding benchmarks.
 
@@ -164,19 +163,22 @@ reward-model families are supported out of the box, each with its own script:
 # Login to Weights & Biases for experiment tracking
 wandb login
 
-# Train with the CodeScaler-8B reward model
+# Train with the CodeScaler-8B reward model (active env)
 bash scripts/train_codescaler.sh
+# ...or the uv-managed variant:
+bash scripts/train_codescaler_uv.sh
 
-# ...or train with a Themis reward model (project-themis/Themis-RM-{0.6B,1.7B,4B,8B,14B,32B})
-bash scripts/train_themis.sh
+# Train with a Themis reward model (project-themis/Themis-RM-{0.6B,1.7B,4B,8B,14B,32B})
+bash scripts/train_themis.sh        # active env
+bash scripts/train_themis_uv.sh     # uv-managed
 ```
 
-> 💡 Each training script is self-contained: it runs `uv sync --frozen`, activates the
-> `.venv`, trains, and stops its Ray cluster on exit. Just run it directly — no manual
-> `uv run` / `source .venv/bin/activate` needed. Extra args are forwarded to the recipe
-> as Hydra overrides, e.g. `bash scripts/train_codescaler.sh trainer.total_training_steps=10`.
-> The 4-node Themis-RM-32B run uses `scripts/train_themis_32b_multinode.sh` (see the
-> Multi-Node Training section below).
+> 💡 The `*.sh` and `*_uv.sh` variants run the identical recipe; only the env handling
+> differs (`*_uv.sh` adds `uv sync --frozen` + venv activation). Both stop their Ray
+> cluster on exit. Extra args are forwarded to the recipe as Hydra overrides, e.g.
+> `bash scripts/train_codescaler.sh trainer.total_training_steps=10`. The 4-node
+> Themis-RM-32B run uses `scripts/train_themis_32b_multinode.sh` (active env) or
+> `scripts/train_themis_32b_multinode_uv.sh` (uv); see the Multi-Node Training section.
 
 The two scripts share the same recipe and differ only in `reward_model.model.path`.
 The reward-model architecture is selected automatically from that path inside
@@ -189,10 +191,12 @@ template (see `scripts/train_themis.sh` for details).
 
 #### Multi-Node Training (AWS, 4 × 8 GPUs)
 
-`scripts/train_themis_32b_multinode.sh` runs the colocated (hybrid-engine) recipe
+`scripts/train_themis_32b_multinode.sh` (active env) and its uv-managed counterpart
+`scripts/train_themis_32b_multinode_uv.sh` run the colocated (hybrid-engine) recipe
 across **4 nodes × 8 GPUs = 32 GPUs**, training Qwen3-8B-Base against the 32B Themis
 reward model (`project-themis/Themis-RM-32B`). The same pattern works for any reward
-model — just change `rm_path`.
+model — just change `rm_path`. The launch commands below use the `_uv` variant; drop
+the `_uv` suffix to run in an already-active environment.
 
 **How it scales.** The only required config change for multi-node is
 `trainer.nnodes` (here `4`). With `reward_model.enable_resource_pool=False` (default),
@@ -210,10 +214,10 @@ register, then launches the driver; workers only host Ray actors):
 
 ```bash
 # On each of the 3 WORKER nodes:
-HEAD_IP=<head-private-ip> HEAD_PORT=6379 ROLE=worker bash scripts/train_themis_32b_multinode.sh
+HEAD_IP=<head-private-ip> HEAD_PORT=6379 ROLE=worker bash scripts/train_themis_32b_multinode_uv.sh
 
 # On the HEAD node:
-HEAD_IP=<head-private-ip> HEAD_PORT=6379 ROLE=head   bash scripts/train_themis_32b_multinode.sh
+HEAD_IP=<head-private-ip> HEAD_PORT=6379 ROLE=head   bash scripts/train_themis_32b_multinode_uv.sh
 ```
 
 **FSDP sharding.** `fsdp_size` controls the device mesh and is applied to both the
@@ -262,7 +266,8 @@ Evaluate your trained model:
 
 ```bash
 # Run evaluation on benchmarks
-bash scripts/eval.sh
+bash scripts/eval.sh        # active env
+bash scripts/eval_uv.sh     # uv-managed
 ```
 
 ### 💻 Use CodeScaler for RM Scoring
