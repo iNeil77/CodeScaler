@@ -98,9 +98,9 @@ uv sync --frozen
 That's it — there is no separate FlashAttention step (it is pinned in `pyproject.toml`
 to the prebuilt CUDA 12 / torch 2.6 / cp310 wheel). Run any command in the project
 environment by prefixing it with `uv run`, e.g. `uv run python data/prepare_deepcoder.py`.
-The provided `scripts/train_*.sh` already invoke `python -m recipe...`; run them under
-uv with `uv run bash scripts/train_codescaler.sh`, or activate the venv once with
-`source .venv/bin/activate` and use the scripts directly.
+The `scripts/train_*.sh` scripts are self-contained: each runs `uv sync --frozen`,
+activates the `.venv`, trains, and tears down its Ray cluster on exit — so you can run
+them directly (`bash scripts/train_codescaler.sh`) without activating anything first.
 
 > 💡 Use `uv sync` (without `--frozen`) only when intentionally changing dependencies;
 > it will update `uv.lock`.
@@ -159,18 +159,12 @@ bash scripts/train_codescaler.sh
 bash scripts/train_themis.sh
 ```
 
-> 💡 With the uv setup, either activate the venv first (`source .venv/bin/activate`)
-> or run the script under uv (`uv run bash scripts/train_codescaler.sh`). For a
-> one-command path, `scripts/train_uv.sh` runs `uv sync --frozen` and then launches
-> a recipe inside the uv environment:
->
-> ```bash
-> bash scripts/train_uv.sh                       # CodeScaler-8B (default)
-> bash scripts/train_uv.sh themis                # Themis, single node
-> bash scripts/train_uv.sh themis-32b-multinode  # Themis-RM-32B, 4 nodes
-> # extra args are forwarded as Hydra overrides, e.g.:
-> bash scripts/train_uv.sh codescaler trainer.total_training_steps=10
-> ```
+> 💡 Each training script is self-contained: it runs `uv sync --frozen`, activates the
+> `.venv`, trains, and stops its Ray cluster on exit. Just run it directly — no manual
+> `uv run` / `source .venv/bin/activate` needed. Extra args are forwarded to the recipe
+> as Hydra overrides, e.g. `bash scripts/train_codescaler.sh trainer.total_training_steps=10`.
+> The 4-node Themis-RM-32B run uses `scripts/train_themis_32b_multinode.sh` (see the
+> Multi-Node Training section below).
 
 The two scripts share the same recipe and differ only in `reward_model.model.path`.
 The reward-model architecture is selected automatically from that path inside

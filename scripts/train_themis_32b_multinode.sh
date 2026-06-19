@@ -31,6 +31,23 @@
 set -x
 
 # ============================================================================
+# UV ENVIRONMENT BOOTSTRAP (self-contained; run from anywhere, on every node)
+# ============================================================================
+# Resolve the repo root from this script's location and create/activate the locked
+# uv environment, so `python`/`ray` resolve to the project .venv. Run this on BOTH
+# the head and the worker nodes. Activating the venv (instead of `uv run`) also
+# avoids Ray's uv runtime-env hook, which errors on the recipe's working_dir=None.
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+cd "$REPO_ROOT"
+if ! command -v uv >/dev/null 2>&1; then
+    echo "error: uv not found. Install it first: curl -LsSf https://astral.sh/uv/install.sh | sh" >&2
+    exit 1
+fi
+uv sync --frozen
+source .venv/bin/activate
+
+# ============================================================================
 # CLUSTER / LAUNCH CONFIGURATION  (override via env)
 # ============================================================================
 HEAD_IP=${HEAD_IP:?Set HEAD_IP to the Ray head node private IP}
@@ -68,6 +85,13 @@ fi
 if [ "$ROLE" != "head" ]; then
     echo "ROLE must be 'head' or 'worker' (got '$ROLE')"; exit 1
 fi
+
+# Head-only: tear down the local Ray head on exit (success, failure, or Ctrl-C) so
+# the cluster doesn't leak. NOTE: this stops Ray on the HEAD node only; each WORKER
+# node keeps its own Ray running (it exited above with ROLE=worker). After the run,
+# stop the workers with `ray stop` on each worker node (or just terminate them).
+cleanup() { echo ">> ray stop (cleanup, head)"; ray stop --force >/dev/null 2>&1 || true; }
+trap cleanup EXIT INT TERM
 
 # ============================================================================
 # DATASET CONFIGURATION
