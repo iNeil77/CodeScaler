@@ -204,12 +204,61 @@ All families return `(batch_size,)`. `_expand_to_token_level`
 (`codescaler_fsdp_workers.py:316-331`) then scatters the scalar onto the last
 response token and slices to the response region, yielding `rm_scores`.
 
+**Padding.** The RM input is built identically for every family by
+`_switch_chat_template` — `left_pad=False` (right padding), `truncation="right"`
+(`codescaler_fsdp_workers.py:392-398`). There is **no `rm_type`-specific padding**.
+The two families nonetheless locate the scored token differently, and only agree
+because of that shared right-padding:
+- **CodeScaler / AceCoder** gather `argmax(position_ids * attention_mask)` — the last
+  mask=1 position, which is correct **only under right padding**.
+- **Themis** lets the Qwen3 `AutoModelForSequenceClassification` head pool: it takes
+  `last_non_pad_token = (token_indices * (input_ids != pad_token_id)).argmax(-1)`,
+  i.e. the rightmost non-pad token. This is robust to *either* padding side, but it
+  requires the RM's `config.pad_token_id` to be set (true for the Qwen3-based Themis
+  suite).
+
+So if the shared padding were ever switched to left-pad, the CodeScaler gather would
+break while Themis would not — today both are consistent because the input is
+right-padded.
+
 > **Doc note on CodeScaler-8B:** the model card and README load CodeScaler-8B with
 > `AutoModelForSequenceClassification`, while the training worker loads it with
 > `AutoModelForTokenClassification` + an explicit last-token gather. For Qwen3
 > these are numerically equivalent (same `score` head; the gather reproduces
 > seqcls pooling), so existing runs are correct. Themis is loaded as a true
 > sequence classifier to match its authoritative inference script.
+
+---
+
+## 4b. Execution-based verifier (validation / auxiliary score)
+
+The scalar RM is the training reward. Real code execution is used for the
+**validation** correctness score (and as an auxiliary signal), via
+`check_correctness` → `lcb_check_correctness` → `run_test`
+(`codescaler_utils.py`, `livecodebench.py`).
+
+**Isolation.** There is no container/VM sandbox. Each check runs the model's code via
+plain `exec()` in a forked `multiprocessing.Process`, hardened by:
+- a **process boundary** (a crash/OOM kills only that child; the parent records it as
+  a failed test),
+- POSIX `rlimit` memory caps (`reliability_guard`, `livecodebench.py`) — **4 GB**
+  (`RLIMIT_AS`/`RLIMIT_DATA`/`RLIMIT_STACK`),
+- a **`SIGALRM` per-test wall-clock timeout** — default **5 s** per test case
+  (`lcb_check_correctness(..., timeout=5)`), with an outer process-`join` backstop,
+- monkey-patching destructive entry points to `None` (`os.system/remove/...`,
+  `subprocess.Popen`, etc.).
+
+`reliability_guard`'s own docstring states it is **not a security sandbox**; it is
+fault-containment for trusted/semi-trusted code. For untrusted code or untrusted
+datasets, route execution to a real sandbox (see `reward_model.sandbox_fusion.url`).
+
+**Test fixtures.** The per-problem test I/O lives JSON-encoded in
+`reward_model.ground_truth` and can be very large (>100 MB for some
+LiveCodeBench/TACO problems). `run_test` parses these fixtures **before** lowering the
+memory rlimit (so a large `json.loads` is not strangled by the cap), and the fixture
+dict is passed through without redundant re-`dumps`/`loads` round-trips. (Earlier this
+combination caused `MemoryError` on the largest problems, which were then silently
+graded as all-tests-failed.)
 
 ---
 
@@ -222,9 +271,21 @@ response token and slices to the response region, yielding `rm_scores`.
 | `scripts/train_themis_32b_multinode.sh` | `project-themis/Themis-RM-32B` | 4 nodes × 8 GPUs, colocated |
 
 All three keep `reward_model.reward_manager=codescaler` (that routes to
-`CodeScalerRewardModelWorker`, which holds the family dispatch) and differ mainly
-in `reward_model.model.path`. The Themis scripts set `reward_model.max_length=4096`
-to match the authoritative Themis inference default.
+`CodeScalerRewardModelWorker`, which holds the family dispatch) and differ **only** in
+`reward_model.model.path` (plus the cosmetic `rm_pretty_name` / `WANDB_PROJECT`). The
+RM architecture, score pooling, and system-prompt handling are all auto-selected from
+that path, so `train_themis.sh` is `train_codescaler.sh` with `rm_path` swapped. Both
+set `reward_model.max_length=4096`.
+
+**Two flavors per script.** Each script ships as a plain variant and a `_uv` variant:
+- `scripts/<name>.sh` runs in the already-active environment (conda/pip/venv), exactly
+  as upstream. It does not manage dependencies.
+- `scripts/<name>_uv.sh` is self-contained: resolves the repo root, runs
+  `uv sync --frozen`, activates the locked `.venv`, then does the same work.
+
+Both register a `ray stop` cleanup trap on exit (multi-node arms it on the head only;
+workers keep Ray running by design). `scripts/prepare_data.sh` / `prepare_data_uv.sh`
+build the datasets the training scripts expect.
 
 ---
 
