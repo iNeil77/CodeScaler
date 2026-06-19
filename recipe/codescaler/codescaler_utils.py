@@ -108,7 +108,7 @@ def check_correctness(data, model_response, config, use_partial_reward=False):
     if data_source in ['taco']:
         tests = taco_to_lcb_format(tests)
         is_correct, test_details = lcb_check_correctness(tests, model_code, debug=False)
-    elif data_source in ['lcbv5', 'primeintellect', 'codeforces', 'rstarcoder', 'kodcode']:
+    elif data_source in ['lcbv5', 'lcbv6', 'primeintellect', 'codeforces', 'rstarcoder', 'kodcode']:
         is_correct, test_details = lcb_check_correctness(tests, model_code, debug=False)
     else:
         raise NotImplementedError(f"Dataset {data_source} not implemented")

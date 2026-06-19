@@ -1,8 +1,70 @@
 from datasets import load_dataset
 from system_prompts import *
+import base64
 import json
 import os
+import pickle
+import zlib
 from datasets import Dataset, concatenate_datasets
+
+
+def load_lcb_v6(version_tag="release_v6", filename="test6.jsonl"):
+    """Load the LiveCodeBench v6 code-generation problems and shape each record like
+    the other DeepCoder sources, so it can flow through _map_source('lcbv6').
+
+    Mirrors the official decoder
+    (github.com/LiveCodeBench/LiveCodeBench .../benchmarks/code_generation.py):
+    public_test_cases are plain JSON; private_test_cases are JSON, or fall back to
+    base64 -> zlib.decompress -> pickle.loads -> json.loads. Each test is
+    {input, output, testtype in {stdin, functional}}. fn_name comes from
+    metadata.func_name; functional problems are dropped downstream by _is_stdin.
+    """
+    from huggingface_hub import hf_hub_download
+
+    path = hf_hub_download(
+        repo_id="livecodebench/code_generation_lite",
+        repo_type="dataset",
+        filename=filename,
+    )
+
+    records = []
+    with open(path) as f:
+        for line in f:
+            line = line.strip()
+            if not line:
+                continue
+            rec = json.loads(line)
+
+            public = json.loads(rec["public_test_cases"])
+            priv_raw = rec["private_test_cases"]
+            try:
+                private = json.loads(priv_raw)
+            except Exception:
+                private = json.loads(
+                    pickle.loads(zlib.decompress(base64.b64decode(priv_raw.encode("utf-8"))))
+                )
+
+            metadata = rec["metadata"]
+            if isinstance(metadata, str):
+                metadata = json.loads(metadata) if metadata else {}
+
+            # Build the same [{input, output, testtype}] tests list shape used by lcbv5,
+            # combining public + private cases.
+            tests = [
+                {"input": t["input"], "output": t["output"], "testtype": t.get("testtype", "stdin")}
+                for t in (public + private)
+            ]
+
+            records.append(
+                {
+                    "problem": rec["question_content"],
+                    "tests": json.dumps(tests),
+                    "starter_code": rec.get("starter_code", "") or "",
+                    "metadata": metadata,  # carries func_name for functional problems
+                }
+            )
+
+    return Dataset.from_list(records)
 
 
 def _num_proc(n_rows, min_chunk=256):
@@ -150,9 +212,11 @@ def construct_train_dataset(ds_lcbv5, ds_primeintellect, ds_taco):
     return concatenate_datasets(mapped)
 
 
-def construct_test_dataset(ds_codeforces, ds_lcbv5):
-    ds_list = [ds_codeforces, ds_lcbv5]
-    data_source_list = ['codeforces', 'lcbv5']
+def construct_val_dataset(ds_codeforces, ds_lcbv5, ds_lcbv6):
+    # Validation set exec-evaluated mid-training: codeforces + LiveCodeBench v5 + v6,
+    # tagged by data_source. All routed through the same stdin-only scheme.
+    ds_list = [ds_codeforces, ds_lcbv5, ds_lcbv6]
+    data_source_list = ['codeforces', 'lcbv5', 'lcbv6']
     mapped = [_map_source(ds, src) for ds, src in zip(ds_list, data_source_list)]
     return concatenate_datasets(mapped)
 
@@ -161,18 +225,21 @@ def main():
     ds_lcbv5 = load_dataset("agentica-org/DeepCoder-Preview-Dataset", "lcbv5")
     ds_primeintellect = load_dataset("agentica-org/DeepCoder-Preview-Dataset", "primeintellect")
     ds_taco = load_dataset("agentica-org/DeepCoder-Preview-Dataset", "taco")
+    ds_lcbv6 = load_lcb_v6()
 
     split = "train"
     ds_train = construct_train_dataset(ds_lcbv5[split], ds_primeintellect[split], ds_taco[split])
-    
-    split = "test"
-    ds_test = construct_test_dataset(ds_codeforces[split], ds_lcbv5[split])
+
+    # Validation: codeforces + lcbv5 (DeepCoder test split) + lcbv6 (LiveCodeBench v6).
+    ds_val = construct_val_dataset(ds_codeforces["test"], ds_lcbv5["test"], ds_lcbv6)
 
     ds_train = ds_train.shuffle(seed=42)
-    ds_test = ds_test.shuffle(seed=42)
+    ds_val = ds_val.shuffle(seed=42)
 
-    ds_train.to_parquet("./datasets/DeepCoder/train.parquet")
-    ds_test.to_parquet("./datasets/DeepCoder/test.parquet")
+    # lcbv5/lcbv6 ground_truth blobs reach ~200MB; batch_size=1 avoids pyarrow's 2GB
+    # offset overflow on write.
+    ds_train.to_parquet("./datasets/DeepCoder/train.parquet", batch_size=1)
+    ds_val.to_parquet("./datasets/DeepCoder/val.parquet", batch_size=1)
 
 if __name__ == "__main__":
     main()

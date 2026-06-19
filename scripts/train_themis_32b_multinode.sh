@@ -85,7 +85,7 @@ trap cleanup EXIT INT TERM
 # ============================================================================
 dataset_name=DeepCoder
 train_data=[$(pwd)/datasets/DeepCoder/train.parquet]
-val_data=[$(pwd)/datasets/Evaluation/LiveCodeBench.parquet]
+val_data=[$(pwd)/datasets/DeepCoder/val.parquet]
 
 # ============================================================================
 # MODEL CONFIGURATION

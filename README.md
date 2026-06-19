@@ -147,8 +147,9 @@ bash scripts/prepare_data_uv.sh     # uv-managed
 ```
 
 This writes `datasets/DeepCoder/train.parquet` (training) and
-`datasets/Evaluation/LiveCodeBench.parquet` (validation) — the files the training
-scripts expect — plus the other evaluation benchmarks. Equivalent to running, from the
+`datasets/DeepCoder/val.parquet` (validation: codeforces + LiveCodeBench v5 + v6) —
+the files the training scripts expect — plus the standalone evaluation benchmarks
+under `datasets/Evaluation/`. Equivalent to running, from the
 repo root: `python data/prepare_deepcoder.py`, then `python data/download_data.py`,
 then `python data/prepare_evaluation.py`.
 
