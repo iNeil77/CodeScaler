@@ -39,7 +39,6 @@ DATASETS = {
     'codecontests': './datasets/Evaluation/CodeContests.parquet',
     'codeforces': './datasets/Evaluation/CodeForces.parquet',
     'livebench': './datasets/Evaluation/LiveBench.parquet',
-    'mbpp': './datasets/Evaluation/MBPP.parquet',
     'livecodebench': './datasets/Evaluation/LiveCodeBench.parquet',
     'all': './datasets/Evaluation/All.parquet'
 }
@@ -235,7 +234,7 @@ if __name__ == "__main__":
     parser.add_argument("--n", type=int, default=8, help="Number of repetitions")
     parser.add_argument("--batch_size", type=int, default=32, help="Inference batch size")
     parser.add_argument("--test_workers", type=int, default=None, help="Number of concurrent test processes")
-    parser.add_argument("--dataset", type=str, choices=['codecontests', 'codeforces', 'livebench', 'mbpp', 'livecodebench', 'all'])
+    parser.add_argument("--dataset", type=str, choices=['codecontests', 'codeforces', 'livebench', 'livecodebench', 'all'])
     parser.add_argument("--device_ids", type=str, default=None, help="Comma-separated GPU device IDs (e.g., '0,1,2,3')")
     args = parser.parse_args()
     

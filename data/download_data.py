@@ -2,7 +2,7 @@ import argparse
 from huggingface_hub import hf_hub_download
 import shutil
 
-datasets = ["LiveBench","CodeContests","CodeForces","MBPP"]
+datasets = ["LiveBench","CodeContests","CodeForces"]
 
 split = "test"
 

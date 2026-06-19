@@ -102,15 +102,13 @@ def construct_test_dataset(ds, dataset_name):
         }
         outputs.append(data)
 
-    ds = Dataset.from_list(outputs)
-    return ds
+    return Dataset.from_list(outputs)
 
 def main():
     ds_lcbv5 = load_dataset("agentica-org/DeepCoder-Preview-Dataset", "lcbv5")
     ds_codecontests = load_json("./data/CodeContests.json")
     ds_codeforces = load_json("./data/CodeForces.json")
     ds_livebench = load_json("./data/LiveBench.json")
-    ds_mbpp = load_json("./data/MBPP.json")
 
     ds_all = []
 
@@ -121,8 +119,7 @@ def main():
 
     dataset_names = {'CodeContests': ds_codecontests,
                      'CodeForces': ds_codeforces,
-                     'LiveBench': ds_livebench,
-                     'MBPP': ds_mbpp}
+                     'LiveBench': ds_livebench}
 
     for dataset_name in dataset_names:
         ds_test = construct_test_dataset(dataset_names[dataset_name], dataset_name)

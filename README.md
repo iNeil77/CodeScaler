@@ -129,17 +129,29 @@ flash_attn-2.7.4.post1+cu12torch2.6cxx11abiFALSE-cp310-cp310-linux_x86_64.whl
 
 ### 📦 Data Preparation
 
-Prepare the training and evaluation datasets (prefix with `uv run` if you used the
-uv setup and have not activated the venv):
+Prepare the training and evaluation datasets with the self-contained script (it syncs
+the uv environment and runs every step in the right order):
+
+```bash
+bash scripts/prepare_data.sh
+```
+
+This writes `datasets/DeepCoder/train.parquet` (training) and
+`datasets/Evaluation/LiveCodeBench.parquet` (validation) — the files the training
+scripts expect — plus the other evaluation benchmarks.
+
+<details>
+<summary>Or run the steps manually</summary>
 
 ```bash
 # Prepare training dataset
 python data/prepare_deepcoder.py
 
-# Download and prepare evaluation dataset
-python data/download_dataset.py
+# Download and prepare evaluation datasets (download must run first)
+python data/download_data.py
 python data/prepare_evaluation.py
 ```
+</details>
 
 > 💡 **Tip:** The training dataset is based on DeepCoder training datasets, and evaluation includes multiple coding benchmarks.
 
