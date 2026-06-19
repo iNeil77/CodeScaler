@@ -142,6 +142,75 @@ template (see `scripts/train_themis.sh` for details).
 
 > 💡 **Tip:** Check the `scripts/train_*.sh` files to customize hyperparameters such as learning rate, batch size, and training epochs.
 
+#### Multi-Node Training (AWS, 4 × 8 GPUs)
+
+`scripts/train_themis_32b_multinode.sh` runs the colocated (hybrid-engine) recipe
+across **4 nodes × 8 GPUs = 32 GPUs**, training Qwen3-8B-Base against the 32B Themis
+reward model (`project-themis/Themis-RM-32B`). The same pattern works for any reward
+model — just change `rm_path`.
+
+**How it scales.** The only required config change for multi-node is
+`trainer.nnodes` (here `4`). With `reward_model.enable_resource_pool=False` (default),
+the policy and the reward model are *colocated*: one Ray worker per GPU holds a shard
+of both models across all 32 GPUs, and they time-share each GPU (rollout → log-prob →
+reward scoring → GRPO update).
+
+**Ray vs. torch master.** The IP/port you pass is the **Ray head** address (used to
+join the nodes into one cluster). VeRL derives the `torch.distributed`
+`MASTER_ADDR`/`MASTER_PORT` automatically from the rank-0 worker's placement group —
+you do **not** set those yourself.
+
+**Launch.** Start the workers first, then the head (the head waits until all 32 GPUs
+register, then launches the driver; workers only host Ray actors):
+
+```bash
+# On each of the 3 WORKER nodes:
+HEAD_IP=<head-private-ip> HEAD_PORT=6379 ROLE=worker bash scripts/train_themis_32b_multinode.sh
+
+# On the HEAD node:
+HEAD_IP=<head-private-ip> HEAD_PORT=6379 ROLE=head   bash scripts/train_themis_32b_multinode.sh
+```
+
+**FSDP sharding.** `fsdp_size` controls the device mesh and is applied to both the
+actor and the reward model:
+- `fsdp_size=8` → `HYBRID_SHARD`: shard within each node's 8 GPUs (intra-node NVLink),
+  replicate across the 4 nodes. Faster, but more per-GPU memory.
+- `fsdp_size=-1` → `FULL_SHARD` across all 32 GPUs: least per-GPU memory, but every
+  parameter all-gather crosses the inter-node fabric.
+
+**AWS networking.** Multi-node FSDP collectives need EFA/NCCL configured (not part of
+the recipe). The script sets `FI_PROVIDER=efa`, `FI_EFA_USE_DEVICE_RDMA=1`,
+`NCCL_SOCKET_IFNAME` (adjust to your ENI), and `NCCL_DEBUG=INFO`. Your security group
+must allow the Ray ports between nodes **and** all traffic within the SG itself
+(self-referencing rule) for EFA/NCCL. Pre-stage model weights on a shared FSx/EFS
+mount or bake them into the AMI so all nodes don't each re-download (the 32B RM is
+~64 GB).
+
+**Running out of memory?** Levers in rough order of impact (full list documented at
+the bottom of the script):
+1. **Give the reward model its own nodes** — `reward_model.enable_resource_pool=True`
+   with `reward_model.nnodes` / `reward_model.n_gpus_per_node` (e.g. 3 policy nodes +
+   1 RM node). Biggest win: the 32B RM stops competing for policy memory.
+2. **`fsdp_size=-1`** (FULL_SHARD across all 32 GPUs) — lowest per-GPU footprint.
+3. **Lower `actor_rollout_ref.rollout.gpu_memory_utilization`** (e.g. 0.7 → 0.5) to
+   shrink vLLM's reserved KV cache.
+4. **`actor_rollout_ref.rollout.tensor_model_parallel_size=2/4`** to shard the policy
+   in vLLM.
+5. **Cut activations** — lower `ppo_max_token_len_per_gpu`, micro-batch sizes,
+   `reward_model.max_length`, or `data.max_response_length`.
+
+> ⚠️ The reward model is CPU-offloaded by the worker. Under `HYBRID_SHARD` each node's
+> host RAM holds a full bf16 copy of the 32B RM (~64 GB) plus the actor's offloaded
+> state — comfortable on p4d/p5-class hosts; on smaller-RAM instances prefer
+> `fsdp_size=-1` to spread the offload.
+
+> 📖 **Full reference:** [`recipe/codescaler/REWARD_MODELS.md`](recipe/codescaler/REWARD_MODELS.md)
+> documents the complete reward-model pipeline — reward flow, family selection
+> (CodeScaler / Themis / AceCoder), input formatting and chat templates, score
+> read-out, GPU placement (colocated vs. dedicated pool), FSDP sharding modes,
+> multi-node setup, the full out-of-memory lever list, and how to add a new RM
+> family.
+
 ### 📈 Evaluation
 
 Evaluate your trained model:
