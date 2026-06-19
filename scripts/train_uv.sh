@@ -50,6 +50,14 @@ case "$RECIPE" in
 esac
 shift || true  # drop the recipe name; remaining args are forwarded as Hydra overrides
 
+# When a Ray driver is launched under `uv run`, Ray auto-activates a hook
+# (RAY_ENABLE_UV_RUN_RUNTIME_ENV, default on) that rederives a uv runtime_env for the
+# workers. The recipe passes runtime_env with working_dir=None, which makes that hook
+# raise `TypeError: path_or_uri must be a string, got NoneType` before ray.init()
+# returns. We already manage dependencies via the synced .venv (workers inherit it on
+# this single node), so disable the hook.
+export RAY_ENABLE_UV_RUN_RUNTIME_ENV=0
+
 # 1. Create/refresh the locked environment (.venv). --frozen errors out instead of
 #    silently editing uv.lock, keeping the run reproducible.
 echo ">> uv sync --frozen"
