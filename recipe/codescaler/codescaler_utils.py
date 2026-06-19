@@ -171,8 +171,12 @@ def postprocess_lcb_sample(sample):
         # Fill in the blank
         sample_dict["fn_name"] = fn_name
 
+    # (b) Keep the parsed dict instead of round-tripping through json.dumps/json.loads.
+    # The test I/O can be >100MB; re-serializing and re-decoding it (here, in the
+    # timeout calc, in run_test, and in the result handling) multiplied peak memory
+    # several-fold. run_test now accepts this dict directly.
     sample = {
-        "input_output": json.dumps(sample_dict),
+        "input_output": sample_dict,
     }
     return sample
 
@@ -187,6 +191,9 @@ def lcb_check_correctness(sample, generation, timeout=2, debug=False):
     inside `run_test`"""
     assert len(sample) >= 1, "Sample must contain at least one test case"
     sample = postprocess_lcb_sample(sample)
+    # input_output is now a parsed dict (see postprocess_lcb_sample); access it
+    # directly instead of re-decoding the (potentially >100MB) JSON each time.
+    in_outs = sample["input_output"]
 
     manager = multiprocessing.Manager()
     result = manager.list()
@@ -197,14 +204,13 @@ def lcb_check_correctness(sample, generation, timeout=2, debug=False):
         args=(sample, generation, debug, result, metadata_list, timeout),
     )
     p.start()
-    p.join(timeout=(timeout + 1) * len(json.loads(sample["input_output"])["inputs"]) + 5)
+    p.join(timeout=(timeout + 1) * len(in_outs["inputs"]) + 5)
 
     detailed_results = {"all_passed": False, "test_results": [], "total_tests": 0, "passed_tests": 0}
 
     if p.is_alive():
         p.kill()
     if not result:
-        in_outs = json.loads(sample["input_output"])
         # consider that all tests failed
         result.extend([[-1 for i in range(len(in_outs["inputs"]))]])
         detailed_results["total_tests"] = len(in_outs["inputs"])
@@ -217,7 +223,6 @@ def lcb_check_correctness(sample, generation, timeout=2, debug=False):
         return False, detailed_results
 
     # Create detailed test results
-    in_outs = json.loads(sample["input_output"])
     detailed_results["total_tests"] = len(result[0])
     detailed_results["test_results"] = [{"input": inp, "expected": out, "passed": res == True, "error": metadata_list[0].get("error", None), "error_message": metadata_list[0].get("error_message", None), "output": metadata_list[0].get("output", None)} for inp, out, res in zip(in_outs["inputs"], in_outs["outputs"], result[0], strict=False)]
     detailed_results["passed_tests"] = sum(1 for r in result[0] if r == True)

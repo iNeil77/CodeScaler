@@ -421,18 +421,27 @@ def run_test(sample, test=None, debug=False, timeout=6):
     """
     signal.signal(signal.SIGALRM, timeout_handler)
 
+    # (a) Parse the (trusted) test fixtures BEFORE lowering the memory rlimit. Some
+    #     LiveCodeBench/TACO problems carry >100MB of test I/O in `input_output`, and
+    #     json.loads transiently needs several times the raw size; doing it under the
+    #     reliability_guard cap raises MemoryError on those problems.
+    # (b) Accept an already-parsed dict so we don't re-decode a blob that the caller
+    #     already holds in memory (postprocess_lcb_sample now passes the dict directly).
+    io = sample["input_output"]
+    if isinstance(io, dict):
+        in_outs = io
+    else:
+        try:
+            in_outs = json.loads(io)
+        except ValueError as e:
+            raise e
+
     # Disable functionalities that can make destructive changes to the test.
-    # max memory is set to 1GB
-    reliability_guard(maximum_memory_bytes=1024 * 1024 * 1024)
+    # max memory for the *executed candidate code* is set to 4GB.
+    reliability_guard(maximum_memory_bytes=4 * 1024 * 1024 * 1024)
 
     if debug:
         print(f"start = {datetime.now().time()}")
-
-    try:
-        in_outs = json.loads(sample["input_output"])
-    except ValueError as e:
-        raise e
-        in_outs = None
 
     if in_outs:
         if in_outs.get("fn_name") is None:
