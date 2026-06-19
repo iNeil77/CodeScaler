@@ -50,11 +50,28 @@ def _strip_primeintellect_preamble(question: str) -> str:
     return question
 
 
-def _taco_is_stdin(item) -> bool:
-    """A taco problem is stdin/stdout style unless its tests carry a `fn_name`
-    (function-call graded). We keep only the stdin/stdout ones."""
-    tests = json.loads(item["tests"])
-    return not (isinstance(tests, dict) and tests.get("fn_name"))
+def _is_stdin(item) -> bool:
+    """True if a problem is stdin/stdout style (not function-call graded). We train
+    and validate only on stdin/stdout problems. Detection covers all sources:
+      - starter_code present  -> function-style (lcbv5 functional items)
+      - tests dict has fn_name -> function-style (taco functional items)
+      - tests list item testtype == 'functional' -> function-style (lcbv5)
+    primeintellect and codeforces have none of these, so they pass through."""
+    if item.get("starter_code"):
+        return False
+    md = item.get("metadata") or {}
+    if md.get("func_name"):
+        return False
+    try:
+        tests = json.loads(item["tests"])
+    except (KeyError, TypeError, ValueError):
+        return True
+    if isinstance(tests, dict) and tests.get("fn_name"):
+        return False
+    if isinstance(tests, list) and tests and isinstance(tests[0], dict):
+        if tests[0].get("testtype") == "functional":
+            return False
+    return True
 
 
 def _build_example(item, data_source):
@@ -75,19 +92,12 @@ def _build_example(item, data_source):
 
     tests = json.dumps(tests)
 
-    # System turn: lcbv5 keeps its existing in-line formatting (prepended into the
-    # user turn, possibly with starter code). taco and primeintellect instead get a
-    # separate `system` turn with the stdin/stdout + markdown-block instruction, so
-    # the prompt looks like LiveCodeBench. primeintellect's redundant leading
+    # All sources are filtered to stdin/stdout problems and get the same scheme: a
+    # separate `system` turn carrying the stdin/stdout + markdown-block instruction,
+    # so every prompt looks like LiveCodeBench. primeintellect's redundant leading
     # "Solve ... python:" line is stripped from the user turn.
-    system_content = None
-    if data_source == 'lcbv5':
-        starter_code = item.get("starter_code", None)
-        question = fetch_live_code_bench_system_prompt(question, starter_code)
-    elif data_source in ('taco', 'primeintellect'):
-        if data_source == 'primeintellect':
-            question = _strip_primeintellect_preamble(question)
-        system_content = STDIN_SYSTEM_PROMPT
+    if data_source == 'primeintellect':
+        question = _strip_primeintellect_preamble(question)
 
     if isinstance(question, dict):
         question = json.dumps(question)
@@ -96,7 +106,7 @@ def _build_example(item, data_source):
     # user-only problem text: the reward-model worker reads raw_prompt[0]['content']
     # as the problem, so the system instruction must NOT leak into raw_prompt.
     user_msg = {"role": "user", "content": question}
-    prompt = [{"role": "system", "content": system_content}, user_msg] if system_content else [user_msg]
+    prompt = [{"role": "system", "content": STDIN_SYSTEM_PROMPT}, user_msg]
 
     return {
         "data_source": data_source,
@@ -111,20 +121,22 @@ def _build_example(item, data_source):
 def _map_source(ds, data_source):
     """Map a single source dataset to the target schema in parallel, dropping the
     original columns so the per-source schemas line up for concatenation."""
-    # taco mixes stdin/stdout and function-call (fn_name) problems. We only train on
-    # stdin/stdout, so drop the function-call ones before mapping.
-    if data_source == 'taco':
-        n_before = len(ds)
-        ds = ds.filter(_taco_is_stdin, num_proc=_num_proc(len(ds)), desc="Filtering taco -> stdin only")
-        print(f"  taco: kept {len(ds)}/{n_before} stdin/stdout problems (dropped {n_before - len(ds)} fn_name)")
+    # Keep only stdin/stdout problems (drop function-call / starter-code items). lcbv5
+    # and taco are mixed; primeintellect and codeforces are already all stdin (no-op).
+    n_before = len(ds)
+    ds = ds.filter(_is_stdin, num_proc=_num_proc(len(ds)), desc=f"Filtering {data_source} -> stdin only")
+    if len(ds) != n_before:
+        print(f"  {data_source}: kept {len(ds)}/{n_before} stdin/stdout problems (dropped {n_before - len(ds)} function-style)")
+    # The ground_truth test strings can be very large: lcbv5 has individual blobs up to
+    # ~200MB, so even a few per Arrow chunk overflow pyarrow's 2GB 32-bit offset
+    # ("offset overflow while concatenating arrays"). Use batch size 1 for lcbv5 (small
+    # split) and a small batch elsewhere.
+    writer_batch_size = 1 if data_source == 'lcbv5' else 64
     return ds.map(
         lambda item: _build_example(item, data_source),
         num_proc=_num_proc(len(ds)),
         remove_columns=ds.column_names,
-        # The ground_truth test strings can be very large (esp. TACO); keep the Arrow
-        # write batches small so a single chunk's string column never exceeds the 2GB
-        # offset limit (pyarrow "offset overflow while concatenating arrays").
-        writer_batch_size=64,
+        writer_batch_size=writer_batch_size,
         desc=f"Building {data_source}",
     )
 

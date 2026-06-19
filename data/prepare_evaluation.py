@@ -24,6 +24,38 @@ def fetch_live_code_bench_system_prompt(prompt: str, starter_code: str | None = 
     prompt += "### Answer: (use the provided format with backticks)\n\n"
     return prompt
 
+
+# stdin/stdout system prompt applied as a separate `system` turn to the evaluation
+# sets, so they match the LiveCodeBench-style prompt used for training. Same content
+# as fetch_live_code_bench_system_prompt's no-starter-code branch, problem text kept
+# in the `user` turn. See data/prepare_deepcoder.py for the identical training-side
+# constant.
+STDIN_SYSTEM_PROMPT = (
+    LCB_SYSTEM_MESSAGE_GENERIC
+    + "\n\n"
+    + f"### Format: {LCB_FORMATTING_WITHOUT_STARTER_CODE}\n"
+    + "```python\n# YOUR CODE HERE\n```\n\n"
+    + "### Answer: (use the provided format with backticks)"
+)
+
+
+def _lcb_is_stdin(item) -> bool:
+    """lcbv5 is mixed; keep only stdin/stdout problems (no starter_code, no functional
+    func_name / testtype)."""
+    if item.get("starter_code"):
+        return False
+    md = item.get("metadata") or {}
+    if md.get("func_name"):
+        return False
+    try:
+        tests = json.loads(item["tests"])
+    except (KeyError, TypeError, ValueError):
+        return True
+    if isinstance(tests, list) and tests and isinstance(tests[0], dict):
+        if tests[0].get("testtype") == "functional":
+            return False
+    return True
+
 def load_json(json_file):
     with open(json_file, "r") as f:
         data = json.load(f)
@@ -56,47 +88,57 @@ def _build_lcb_example(item):
 
     tests = json.dumps(tests)
 
-    starter_code = item.get("starter_code", None)
-    question = fetch_live_code_bench_system_prompt(question, starter_code)
-
     if isinstance(question, dict):
         question = json.dumps(question)
 
+    # Separate stdin/stdout system turn; problem stays in the user turn. raw_prompt is
+    # user-only so the reward-model worker (raw_prompt[0]['content']) scores the real
+    # problem, not the instruction.
+    user_msg = {"role": "user", "content": question}
     return {
         "data_source": 'lcbv5',
         "question": ori_question,
-        "prompt": [{"role": "user", "content": question}],
-        "raw_prompt": [{"role": "user", "content": question}],
+        "prompt": [{"role": "system", "content": STDIN_SYSTEM_PROMPT}, user_msg],
+        "raw_prompt": [user_msg],
         "ability": "code",
         "reward_model": {"style": "rule", "ground_truth": tests},
     }
 
 
 def construct_lcb(ds_lcb):
+    # Keep only stdin/stdout problems (drop function-style / starter-code items).
+    n_before = len(ds_lcb)
+    ds_lcb = ds_lcb.filter(_lcb_is_stdin, num_proc=_num_proc(len(ds_lcb)), desc="Filtering lcbv5 -> stdin only")
+    if len(ds_lcb) != n_before:
+        print(f"  lcbv5: kept {len(ds_lcb)}/{n_before} stdin/stdout problems (dropped {n_before - len(ds_lcb)} function-style)")
     return ds_lcb.map(
         _build_lcb_example,
         num_proc=_num_proc(len(ds_lcb)),
         remove_columns=ds_lcb.column_names,
-        # Keep Arrow write batches small: ground_truth test strings can be very large
-        # and overflow pyarrow's 32-bit offset when chunks are combined.
-        writer_batch_size=64,
+        # lcbv5 has individual ground_truth blobs up to ~200MB; write one example per
+        # Arrow chunk so a chunk's string column never overflows pyarrow's 2GB offset
+        # ("offset overflow while concatenating arrays").
+        writer_batch_size=1,
         desc="Building lcbv5",
     )
 
 
 def construct_test_dataset(ds, dataset_name):
-    # ds here is a plain list loaded from JSON; build via from_list (small splits).
+    # ds here is a plain list loaded from JSON (CodeContests/CodeForces/LiveBench);
+    # these benchmarks are stdin/stdout (exe_method='stdin'). Separate system turn,
+    # user-only raw_prompt.
     outputs = []
     for item in ds:
-        question = fetch_live_code_bench_system_prompt(item['question'])
+        question = item['question']
         tests = convert_test(item['test_input'], item['test_output'])
         tests = json.dumps(tests)
 
+        user_msg = {"role": "user", "content": question}
         data = {
             "data_source": dataset_name,
             "question": item['question'],
-            "prompt": [{"role": "user", "content": question}],
-            "raw_prompt": [{"role": "user", "content": question}],
+            "prompt": [{"role": "system", "content": STDIN_SYSTEM_PROMPT}, user_msg],
+            "raw_prompt": [user_msg],
             "ability": "code",
             "reward_model": {"style": "rule", "ground_truth": tests},
         }
@@ -115,7 +157,10 @@ def main():
     split = "test"
     ds_test_lcbv5 = construct_lcb(ds_lcbv5[split])
     ds_all.append(ds_test_lcbv5)
-    ds_test_lcbv5.to_parquet("./datasets/Evaluation/LiveCodeBench.parquet")
+    # Small Arrow write batches: lcbv5 ground_truth blobs reach ~200MB, so the default
+    # batch size overflows pyarrow's 2GB offset. 1 row/batch for lcbv5 and the combined
+    # set (which includes lcbv5); a small batch for the lighter JSON benchmarks.
+    ds_test_lcbv5.to_parquet("./datasets/Evaluation/LiveCodeBench.parquet", batch_size=1)
 
     dataset_names = {'CodeContests': ds_codecontests,
                      'CodeForces': ds_codeforces,
@@ -124,11 +169,11 @@ def main():
     for dataset_name in dataset_names:
         ds_test = construct_test_dataset(dataset_names[dataset_name], dataset_name)
         ds_all.append(ds_test)
-        ds_test.to_parquet(f"./datasets/Evaluation/{dataset_name}.parquet")
+        ds_test.to_parquet(f"./datasets/Evaluation/{dataset_name}.parquet", batch_size=64)
 
     # combine
     ds_combine = concatenate_datasets(ds_all)
-    ds_combine.to_parquet("./datasets/Evaluation/All.parquet")
+    ds_combine.to_parquet("./datasets/Evaluation/All.parquet", batch_size=1)
 
 
 if __name__ == "__main__":
