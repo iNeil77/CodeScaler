@@ -72,29 +72,54 @@
 
 ### ⚙️ Environment Setup
 
-**Step 1: Clone the repository**
+The repository is a self-contained [uv](https://docs.astral.sh/uv/) project. uv
+manages the Python interpreter (3.10), all dependencies, and FlashAttention from a
+single reproducible lockfile (`uv.lock`). This is the recommended path; a manual
+conda/pip path is also documented below.
+
+> Requires Linux + an NVIDIA CUDA 12 GPU (the `torch`, `vllm`, `xformers`, and
+> `flash-attn` pins are CUDA/Linux-only).
+
+#### Option A — uv (recommended)
 
 ```bash
+# 1. Install uv (if not already installed)
+curl -LsSf https://astral.sh/uv/install.sh | sh
+
+# 2. Clone the repository
 git clone https://github.com/LARK-AI-Lab/CodeScaler.git
 cd CodeScaler
+
+# 3. Create the environment from the lockfile (installs Python 3.10, all deps,
+#    and FlashAttention into a local .venv)
+uv sync --frozen
 ```
 
-**Step 2: Create a conda environment**
+That's it — there is no separate FlashAttention step (it is pinned in `pyproject.toml`
+to the prebuilt CUDA 12 / torch 2.6 / cp310 wheel). Run any command in the project
+environment by prefixing it with `uv run`, e.g. `uv run python data/prepare_deepcoder.py`.
+The provided `scripts/train_*.sh` already invoke `python -m recipe...`; run them under
+uv with `uv run bash scripts/train_codescaler.sh`, or activate the venv once with
+`source .venv/bin/activate` and use the scripts directly.
+
+> 💡 Use `uv sync` (without `--frozen`) only when intentionally changing dependencies;
+> it will update `uv.lock`.
+
+#### Option B — conda + pip (manual)
 
 ```bash
+# 1. Clone
+git clone https://github.com/LARK-AI-Lab/CodeScaler.git
+cd CodeScaler
+
+# 2. Create a conda environment
 conda create -n CodeScaler python==3.10.19
 conda activate CodeScaler
-```
 
-**Step 3: Install dependencies**
-
-```bash
+# 3. Install dependencies
 pip install -r requirements.txt
-```
 
-**Step 4: Install FlashAttention**
-
-```bash
+# 4. Install FlashAttention
 pip install --no-cache-dir \
   https://github.com/Dao-AILab/flash-attention/releases/download/v2.7.4.post1/\
 flash_attn-2.7.4.post1+cu12torch2.6cxx11abiFALSE-cp310-cp310-linux_x86_64.whl
@@ -104,7 +129,8 @@ flash_attn-2.7.4.post1+cu12torch2.6cxx11abiFALSE-cp310-cp310-linux_x86_64.whl
 
 ### 📦 Data Preparation
 
-Prepare the training and evaluation datasets:
+Prepare the training and evaluation datasets (prefix with `uv run` if you used the
+uv setup and have not activated the venv):
 
 ```bash
 # Prepare training dataset
@@ -132,6 +158,9 @@ bash scripts/train_codescaler.sh
 # ...or train with a Themis reward model (project-themis/Themis-RM-{0.6B,1.7B,4B,8B,14B,32B})
 bash scripts/train_themis.sh
 ```
+
+> 💡 With the uv setup, either activate the venv first (`source .venv/bin/activate`)
+> or run the script under uv (`uv run bash scripts/train_codescaler.sh`).
 
 The two scripts share the same recipe and differ only in `reward_model.model.path`.
 The reward-model architecture is selected automatically from that path inside

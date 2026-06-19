@@ -1,0 +1,61 @@
+[project]
+name = "codescaler"
+version = "0.1.0"
+description = "VeRL-based RL training for code generation with scalar reward models (CodeScaler / Themis)."
+readme = "README.md"
+# Pinned to 3.10 to match the prebuilt FlashAttention wheel (cp310) and the
+# conda environment documented in the README (python 3.10.x).
+requires-python = "==3.10.*"
+
+# Mirrors requirements.txt (with the logoru -> loguru typo fixed). FlashAttention
+# is installed from the prebuilt CUDA 12 / torch 2.6 / cp310 wheel matching the
+# torch pin below; it is Linux-only.
+dependencies = [
+    "datasets==4.1.0",
+    "numpy==2.1.3",
+    "opentelemetry-semantic-conventions==0.59b0",
+    "omegaconf==2.3.0",
+    "pandas==2.2.2",
+    "pillow==10.4.0",
+    "safetensors==0.4.5",
+    "scikit-learn==1.5.2",
+    "scipy==1.14.1",
+    "sentencepiece==0.2.0",
+    "tensordict==0.11.0",
+    "torch==2.6.0",
+    "torch-tb-profiler==0.4.3",
+    "torchaudio==2.6.0",
+    "torchdata==0.11.0",
+    "torchvision==0.21.0",
+    "tornado==6.4.1",
+    "transformers==4.51.3",
+    "triton==3.2.0",
+    "tenacity==9.1.2",
+    "vllm==0.8.3",
+    "wandb==0.24.1",
+    "xformers==0.0.29.post2",
+    "hydra-core==1.3.2",
+    "codetiming==1.4.0",
+    "accelerate==1.12.0",
+    "peft==0.18.1",
+    "loguru==0.7.3",
+    "regex",
+    "ray>=2.40",
+    "flash-attn @ https://github.com/Dao-AILab/flash-attention/releases/download/v2.7.4.post1/flash_attn-2.7.4.post1+cu12torch2.6cxx11abiFALSE-cp310-cp310-linux_x86_64.whl ; sys_platform == 'linux'",
+]
+
+[tool.uv]
+# verl/ and recipe/ are vendored in-tree and run via `python -m recipe...` from the
+# repo root (Hydra even uses a relative config searchpath). There is no build
+# backend and nothing to install as a wheel, so treat this as a non-packaged
+# ("virtual") project: uv manages the .venv and lockfile only.
+package = false
+
+# This is a CUDA/GPU training repo (vllm, xformers, flash-attn are Linux-only),
+# so restrict resolution to Linux to keep the universal lock solvable.
+environments = ["sys_platform == 'linux'"]
+
+# FlashAttention's prebuilt wheel ships no usable build metadata for source
+# resolution; it is a wheel, so no build is needed. Keep build isolation off for
+# it in case a fallback source build is ever attempted against the installed torch.
+no-build-isolation-package = ["flash-attn"]
