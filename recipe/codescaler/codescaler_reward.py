@@ -24,6 +24,7 @@ import ast
 import numpy as np
 from pathlib import Path
 from collections import Counter
+import psutil
 from concurrent.futures import ThreadPoolExecutor
 import concurrent.futures
 from concurrent.futures import ProcessPoolExecutor
@@ -177,12 +178,78 @@ def compute_reward_async(data: DataProto, config, tokenizer):
 def transform_score(score: float, is_empty: bool, reward_shaping=True):
     if not reward_shaping:
         return score
-    
+
     if is_empty:
         return 0.0
     else:
         # return log(1 + e^x)
         return np.log(1 + np.exp(score))
+
+
+# ---------------------------------------------------------------------------
+# Process-pool execution verifier (ported from verl's PrimeRewardManager pattern).
+# Runs check_correctness across a ProcessPoolExecutor with a per-task timeout and
+# guaranteed teardown of all worker subprocesses on exit -- so a runaway/infinite-loop
+# candidate program can't orphan processes or stall the whole batch. Keeps CodeScaler's
+# own grading (check_correctness): only the parallelism/cleanup is borrowed from prime.
+# ---------------------------------------------------------------------------
+class _VerifyEntry:
+    """Minimal picklable stand-in for a DataProto row carrying only what
+    check_correctness reads (data_source + reward_model.ground_truth)."""
+    __slots__ = ("non_tensor_batch",)
+
+    def __init__(self, data_source, ground_truth):
+        self.non_tensor_batch = {
+            "data_source": data_source,
+            "reward_model": {"ground_truth": ground_truth},
+        }
+
+
+def _verify_one(entry, model_response, config, use_partial_reward):
+    """Top-level (picklable) worker: grade one (problem, response) via check_correctness."""
+    return check_correctness(entry, model_response, config, use_partial_reward)
+
+
+async def _parallel_verify_async(args_list, config, use_partial_reward, num_processes, timeout=300.0):
+    loop = asyncio.get_running_loop()
+    with ProcessPoolExecutor(max_workers=num_processes) as executor:
+        async def _one(entry, resp):
+            try:
+                fut = loop.run_in_executor(
+                    executor, partial(_verify_one, entry, resp, config, use_partial_reward)
+                )
+                return await asyncio.wait_for(fut, timeout=timeout)
+            except (asyncio.TimeoutError, Exception) as e:  # noqa: BLE001
+                print(f"Error/timeout verifying a sample: {e}")
+                return RewardOutput(reward=config.incorrect_reward, is_correct=False)
+        try:
+            tasks = [_one(entry, resp) for entry, resp in args_list]
+            return await asyncio.gather(*tasks)
+        finally:
+            # Kill any lingering worker subprocesses (e.g. spawned by infinite-loop code).
+            for pid in list(getattr(executor, "_processes", {})):
+                try:
+                    p = psutil.Process(pid)
+                    p.terminate()
+                    try:
+                        p.wait(timeout=5)
+                    except psutil.TimeoutExpired:
+                        p.kill()
+                except Exception:  # noqa: BLE001
+                    pass
+
+
+def run_reward_scoring_verify(args_list, config, use_partial_reward, num_processes=64):
+    """Sync entry point: drive _parallel_verify_async on a fresh event loop. Returns a
+    list of RewardOutput aligned with args_list."""
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+    try:
+        return loop.run_until_complete(
+            _parallel_verify_async(args_list, config, use_partial_reward, num_processes)
+        )
+    finally:
+        loop.close()
 
 @register("codescaler")
 class CodeScalerRewardManager:
@@ -214,22 +281,19 @@ class CodeScalerRewardManager:
         else:
             use_partial_reward = self.use_partial_reward
 
-        # run temp bash
-        with ThreadPoolExecutor(max_workers=self.n_workers) as executor:
-            future_to_index = {
-                executor.submit(check_correctness, entry, model_response, self.config, use_partial_reward): i 
-                for i, (entry, model_response) in enumerate(zip(data, responses_str))
-            }
-            results = [None] * len(data)
+        # Extract only the picklable fields check_correctness reads, into lightweight
+        # shims, so we can grade across a ProcessPoolExecutor (true CPU parallelism +
+        # guaranteed subprocess cleanup on timeout/runaway programs).
+        args_list = []
+        for entry, model_response in zip(data, responses_str):
+            nb = entry.non_tensor_batch
+            ds = nb.get("data_source", "")
+            gt = nb.get("reward_model", {}).get("ground_truth", "")
+            args_list.append((_VerifyEntry(ds, gt), model_response))
 
-            for future in tqdm(concurrent.futures.as_completed(future_to_index)):
-                index = future_to_index[future]
-                try:
-                    updated_entry = future.result()
-                    results[index] = updated_entry
-                except Exception as e:
-                    print(f'Error processing index {index}: {e}')
-                    results[index] = RewardOutput(reward=self.config.incorrect_reward, is_correct=False)
+        results = run_reward_scoring_verify(
+            args_list, self.config, use_partial_reward, num_processes=self.n_workers
+        )
 
         for i in range(len(scores)):
             scores[i]['score'] = results[i].reward
