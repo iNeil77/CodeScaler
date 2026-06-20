@@ -29,6 +29,20 @@ from verl.utils.reward_score import default_compute_score
 from verl.workers.reward_manager import get_reward_manager_cls
 from verl.workers.reward_manager.abstract import AbstractRewardManager, RawRewardFn
 
+# When a policy/RM is loaded with trust_remote_code=True, its tokenizer/model class
+# lives in the dynamic `transformers_modules` package (cached under HF_MODULES_CACHE).
+# compute_reward_async runs in a fresh Ray worker that receives a pickled reward
+# manager holding such a tokenizer; without `transformers_modules` importable, the
+# arg deserialization fails with "No module named 'transformers_modules'". This runs
+# at module import (before Ray deserializes the task args) and puts the modules cache
+# on sys.path so the remote-code class can be reconstructed.
+try:
+    from transformers.dynamic_module_utils import init_hf_modules
+
+    init_hf_modules()
+except Exception:  # noqa: BLE001 - best effort; only matters for trust_remote_code models
+    pass
+
 
 def _call_with_kwargs(raw_fn, extra_kwargs, *args, **kwargs):
     """Calls `raw_fn` by merging `extra_kwargs` into call-time `kwargs`, with `extra_kwargs` taking precedence.
