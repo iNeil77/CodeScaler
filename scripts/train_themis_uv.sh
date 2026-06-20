@@ -154,6 +154,7 @@ python -m recipe.codescaler.main_codescaler \
     data.train_batch_size=$batch_size \
     data.val_batch_size=512 \
     data.filter_overlong_prompts=True \
+    data.filter_overlong_prompts_workers=64 \
     data.max_prompt_length=$max_prompt_length \
     data.max_response_length=$max_response_length \
     data.truncation='right' \
