@@ -191,7 +191,12 @@ class CodeScalerRewardManager:
         self.num_examine = num_examine  # the number of batches of decoded responses to print to the console
         self.compute_score = compute_score or _default_compute_score
         self.step_idx = None
-        self.n_workers = 64
+        # Concurrency for the execution verifier. Each task blocks on a child process
+        # (lcb_check_correctness spawns its own multiprocessing.Process), so threads
+        # parallelize fine across CPU cores. Size to the available cores (capped) and
+        # allow override via env. Default cap 96 keeps headroom on big boxes.
+        _cores = len(os.sched_getaffinity(0)) if hasattr(os, "sched_getaffinity") else (os.cpu_count() or 8)
+        self.n_workers = int(os.environ.get("CODESCALER_VERIFY_WORKERS", min(96, max(8, _cores - 8))))
         self.binary = False
         self.parse_code_mode = "all_in_last_turn" # "all", "first", "last"
         self.config = RewardConfig()
@@ -210,7 +215,7 @@ class CodeScalerRewardManager:
             use_partial_reward = self.use_partial_reward
 
         # run temp bash
-        with ThreadPoolExecutor(max_workers=8) as executor:
+        with ThreadPoolExecutor(max_workers=self.n_workers) as executor:
             future_to_index = {
                 executor.submit(check_correctness, entry, model_response, self.config, use_partial_reward): i 
                 for i, (entry, model_response) in enumerate(zip(data, responses_str))
