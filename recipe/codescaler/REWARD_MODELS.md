@@ -4,8 +4,8 @@ This document describes how scalar reward models are wired into the CodeScaler
 VeRL recipe end to end: the reward flow, how a reward-model (RM) family is
 selected and loaded, how each family formats its input, how the scalar score is
 produced and shaped, how the policy and reward models are placed on GPUs (single-
-and multi-node), the FSDP sharding modes, out-of-memory levers, and how to add a
-new RM family.
+and multi-node), the FSDP sharding modes, out-of-memory levers, how to add a
+new RM family, and how the train/val/eval datasets are prepared (section 11).
 
 All file:line references point at this repository.
 
@@ -492,3 +492,58 @@ change rather than a silent fallback.
 | `actor_rollout_ref.rollout.tensor_model_parallel_size` | vLLM rollout TP |
 | `trainer.nnodes` / `trainer.n_gpus_per_node` | global pool size = `world_size` |
 | `algorithm.adv_estimator` | `grpo` in the shipped scripts |
+
+---
+
+## 11. Dataset preparation (`data/prepare_*.py`)
+
+`scripts/prepare_data.sh` (or `prepare_data_uv.sh`) builds the parquet files the
+training/eval scripts consume. Outputs (all gitignored — local artifacts, not LFS):
+
+```
+datasets/DeepCoder/train.parquet   # training:   lcbv5 + primeintellect + taco
+datasets/DeepCoder/val.parquet     # mid-train validation: codeforces + lcbv5 + lcbv6
+datasets/Evaluation/*.parquet      # standalone eval: LiveCodeBench(=lcbv5), CodeForces,
+                                    #   CodeContests, LiveBench, All
+```
+
+Builders: `data/prepare_deepcoder.py` (train + val), `data/download_data.py` +
+`data/prepare_evaluation.py` (standalone eval benchmarks).
+
+**Pinned revisions.** All HF loads pass a fixed `revision=` (`HF_REVISIONS` in each
+file) for reproducibility — `agentica-org/DeepCoder-Preview-Dataset`,
+`livecodebench/code_generation_lite` (LCB v6 `test6.jsonl`), and the `Gen-Verse/*`
+benchmarks.
+
+**stdin/stdout only.** Every source is filtered to stdin/stdout problems; function-call
+items (those with `starter_code`, a `tests` `fn_name`, or `testtype == "functional"`)
+are dropped via `_is_stdin`. So lcbv5/lcbv6/taco shrink; primeintellect/codeforces are
+already all-stdin. MBPP was removed entirely (assert-based, unsupported schema).
+
+**Prompt scheme.** Each example is `prompt = [{system: STDIN_SYSTEM_PROMPT}, {user:
+problem}]` and `raw_prompt = [{user: problem}]` (user-only). The system turn carries
+the LiveCodeBench stdin/stdout + ```` ```python ```` markdown-block instruction;
+`raw_prompt` is kept system-free because the RM worker reads `raw_prompt[0]['content']`
+as the problem. primeintellect's redundant inline "Solve ... python:" preamble is
+stripped.
+
+**LCB v6.** `load_lcb_v6()` downloads `test6.jsonl` and decodes it with the official
+loader (public tests = JSON; private tests = JSON or base64 → zlib → pickle → json),
+shaping records like lcbv5. It is graded as `data_source='lcbv6'` (added to the
+`check_correctness` allowlist in `codescaler_utils.py`).
+
+**Train-only filters.** Problems with fewer than `MIN_TRAIN_TEST_CASES = 5` test cases
+are dropped from train (weak reward signal); validation is untouched. (No-op on the
+current pinned sources — their minimums are already ≥ 5.)
+
+**`extra_info`.** Every row carries verl `extra_info = {split, index, id}` where `id`
+is `SOURCE_UUID` — `SOURCE` is the capitalized source (`LCB_V5`, `LCB_V6`,
+`CODEFORCES`, `PRIMEINTELLECT`, `TACO`, plus `CODECONTESTS`/`LIVEBENCH` on the eval
+side) and UUID is a `uuid4` (regenerated each prep run).
+
+**`large_string` ground_truth.** `reward_model.ground_truth` is stored as Arrow
+`large_string` (64-bit offsets). Some lcbv5/lcbv6 test blobs are ~200MB; as a plain
+`string` (int32 offsets, 2.1GB/array limit) a consumer concatenating a whole split
+(e.g. `Dataset.from_parquet` → `combine_chunks()`) overflows. Writes also use
+`batch_size=1` to stay under the per-chunk limit. Stored values are unchanged JSON, so
+`json.loads` downstream is unaffected.
