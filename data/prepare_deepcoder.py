@@ -4,11 +4,40 @@ import base64
 import json
 import os
 import pickle
+import uuid
 import zlib
 from datasets import Dataset, concatenate_datasets
 
 
-def load_lcb_v6(version_tag="release_v6", filename="test6.jsonl"):
+# Pinned HF dataset revisions for reproducibility. Resolved 2026-06-20; update
+# deliberately if you want newer data.
+HF_REVISIONS = {
+    "agentica-org/DeepCoder-Preview-Dataset": "177913a7bd43791646ef6a43645caa3c871ab3db",
+    "livecodebench/code_generation_lite": "0fe84c3912ea0c4d4a78037083943e8f0c4dd505",
+}
+
+# Map internal data_source labels to the SOURCE prefix used in extra_info["id"]
+# (SOURCE_UUID, SOURCE capitalized/normalized).
+_SOURCE_PREFIX = {
+    "lcbv5": "LCB_V5",
+    "lcbv6": "LCB_V6",
+    "codeforces": "CODEFORCES",
+    "primeintellect": "PRIMEINTELLECT",
+    "taco": "TACO",
+}
+
+
+def _make_extra_info(data_source, index, split):
+    """verl extra_info dict. `id` is SOURCE_UUID (SOURCE capitalized, UUID is uuid4)."""
+    prefix = _SOURCE_PREFIX.get(data_source, data_source.upper())
+    return {
+        "split": split,
+        "index": index,
+        "id": f"{prefix}_{uuid.uuid4()}",
+    }
+
+
+def load_lcb_v6(filename="test6.jsonl"):
     """Load the LiveCodeBench v6 code-generation problems and shape each record like
     the other DeepCoder sources, so it can flow through _map_source('lcbv6').
 
@@ -25,6 +54,7 @@ def load_lcb_v6(version_tag="release_v6", filename="test6.jsonl"):
         repo_id="livecodebench/code_generation_lite",
         repo_type="dataset",
         filename=filename,
+        revision=HF_REVISIONS["livecodebench/code_generation_lite"],
     )
 
     records = []
@@ -136,9 +166,9 @@ def _is_stdin(item) -> bool:
     return True
 
 
-def _build_example(item, data_source):
-    """Transform one raw record into the training schema. Pure function of (item,
-    data_source) so it is safe to run under datasets.map(num_proc=...)."""
+def _build_example(item, idx, data_source, split):
+    """Transform one raw record into the training schema. Pure function of (item, idx,
+    data_source, split) so it is safe to run under datasets.map(num_proc=..., with_indices=True)."""
     question = item["problem"]
     ori_question = question
     tests = json.loads(item["tests"])
@@ -177,10 +207,12 @@ def _build_example(item, data_source):
         "raw_prompt": [user_msg],
         "ability": "code",
         "reward_model": {"style": "rule", "ground_truth": tests},
+        # verl extra_info; `id` is SOURCE_UUID (e.g. LCB_V5_<uuid4>).
+        "extra_info": _make_extra_info(data_source, idx, split),
     }
 
 
-def _map_source(ds, data_source):
+def _map_source(ds, data_source, split):
     """Map a single source dataset to the target schema in parallel, dropping the
     original columns so the per-source schemas line up for concatenation."""
     # Keep only stdin/stdout problems (drop function-call / starter-code items). lcbv5
@@ -195,7 +227,8 @@ def _map_source(ds, data_source):
     # split) and a small batch elsewhere.
     writer_batch_size = 1 if data_source == 'lcbv5' else 64
     return ds.map(
-        lambda item: _build_example(item, data_source),
+        lambda item, idx: _build_example(item, idx, data_source, split),
+        with_indices=True,
         num_proc=_num_proc(len(ds)),
         remove_columns=ds.column_names,
         writer_batch_size=writer_batch_size,
@@ -208,7 +241,7 @@ def construct_train_dataset(ds_lcbv5, ds_primeintellect, ds_taco):
     # order, so the downstream shuffle(seed=42) yields the same dataset as before.
     ds_list = [ds_lcbv5, ds_primeintellect, ds_taco]
     data_source_list = ['lcbv5', 'primeintellect', 'taco']
-    mapped = [_map_source(ds, src) for ds, src in zip(ds_list, data_source_list)]
+    mapped = [_map_source(ds, src, "train") for ds, src in zip(ds_list, data_source_list)]
     return concatenate_datasets(mapped)
 
 
@@ -217,14 +250,15 @@ def construct_val_dataset(ds_codeforces, ds_lcbv5, ds_lcbv6):
     # tagged by data_source. All routed through the same stdin-only scheme.
     ds_list = [ds_codeforces, ds_lcbv5, ds_lcbv6]
     data_source_list = ['codeforces', 'lcbv5', 'lcbv6']
-    mapped = [_map_source(ds, src) for ds, src in zip(ds_list, data_source_list)]
+    mapped = [_map_source(ds, src, "val") for ds, src in zip(ds_list, data_source_list)]
     return concatenate_datasets(mapped)
 
 def main():
-    ds_codeforces = load_dataset("agentica-org/DeepCoder-Preview-Dataset", "codeforces")
-    ds_lcbv5 = load_dataset("agentica-org/DeepCoder-Preview-Dataset", "lcbv5")
-    ds_primeintellect = load_dataset("agentica-org/DeepCoder-Preview-Dataset", "primeintellect")
-    ds_taco = load_dataset("agentica-org/DeepCoder-Preview-Dataset", "taco")
+    deepcoder_rev = HF_REVISIONS["agentica-org/DeepCoder-Preview-Dataset"]
+    ds_codeforces = load_dataset("agentica-org/DeepCoder-Preview-Dataset", "codeforces", revision=deepcoder_rev)
+    ds_lcbv5 = load_dataset("agentica-org/DeepCoder-Preview-Dataset", "lcbv5", revision=deepcoder_rev)
+    ds_primeintellect = load_dataset("agentica-org/DeepCoder-Preview-Dataset", "primeintellect", revision=deepcoder_rev)
+    ds_taco = load_dataset("agentica-org/DeepCoder-Preview-Dataset", "taco", revision=deepcoder_rev)
     ds_lcbv6 = load_lcb_v6()
 
     split = "train"

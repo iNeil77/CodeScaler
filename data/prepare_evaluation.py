@@ -2,8 +2,37 @@ from datasets import load_dataset
 from system_prompts import *
 import json
 import os
+import uuid
 from datasets import Dataset
 from datasets import concatenate_datasets
+
+
+# Pinned HF dataset revisions (resolved 2026-06-20). Mirrors data/prepare_deepcoder.py
+# and data/download_data.py.
+HF_REVISIONS = {
+    "agentica-org/DeepCoder-Preview-Dataset": "177913a7bd43791646ef6a43645caa3c871ab3db",
+    "Gen-Verse/LiveBench": "fa070cf11dccf8bab0bdea01901649bc17222aeb",
+    "Gen-Verse/CodeContests": "e06e6e140899dddc8ef841255db0b050b6da27d6",
+    "Gen-Verse/CodeForces": "b3b3df092edb8f5412a6c4f83ec8753bcd9de943",
+}
+
+# Map data_source labels to the SOURCE prefix used in extra_info["id"] (SOURCE_UUID).
+_SOURCE_PREFIX = {
+    "lcbv5": "LCB_V5",
+    "CodeContests": "CODECONTESTS",
+    "CodeForces": "CODEFORCES",
+    "LiveBench": "LIVEBENCH",
+}
+
+
+def _make_extra_info(data_source, index, split="test"):
+    """verl extra_info dict. `id` is SOURCE_UUID (SOURCE capitalized, UUID is uuid4)."""
+    prefix = _SOURCE_PREFIX.get(data_source, data_source.upper())
+    return {
+        "split": split,
+        "index": index,
+        "id": f"{prefix}_{uuid.uuid4()}",
+    }
 
 
 def _num_proc(n_rows, min_chunk=256):
@@ -70,9 +99,9 @@ def convert_test(test_input, test_output):
         })
     return outputs
             
-def _build_lcb_example(item):
+def _build_lcb_example(item, idx):
     """Transform one LiveCodeBench record into the eval schema. Pure function, safe
-    for datasets.map(num_proc=...)."""
+    for datasets.map(num_proc=..., with_indices=True)."""
     question = item["problem"]
     ori_question = question
     tests = json.loads(item["tests"])
@@ -102,6 +131,7 @@ def _build_lcb_example(item):
         "raw_prompt": [user_msg],
         "ability": "code",
         "reward_model": {"style": "rule", "ground_truth": tests},
+        "extra_info": _make_extra_info("lcbv5", idx),
     }
 
 
@@ -113,6 +143,7 @@ def construct_lcb(ds_lcb):
         print(f"  lcbv5: kept {len(ds_lcb)}/{n_before} stdin/stdout problems (dropped {n_before - len(ds_lcb)} function-style)")
     return ds_lcb.map(
         _build_lcb_example,
+        with_indices=True,
         num_proc=_num_proc(len(ds_lcb)),
         remove_columns=ds_lcb.column_names,
         # lcbv5 has individual ground_truth blobs up to ~200MB; write one example per
@@ -128,7 +159,7 @@ def construct_test_dataset(ds, dataset_name):
     # these benchmarks are stdin/stdout (exe_method='stdin'). Separate system turn,
     # user-only raw_prompt.
     outputs = []
-    for item in ds:
+    for idx, item in enumerate(ds):
         question = item['question']
         tests = convert_test(item['test_input'], item['test_output'])
         tests = json.dumps(tests)
@@ -141,13 +172,15 @@ def construct_test_dataset(ds, dataset_name):
             "raw_prompt": [user_msg],
             "ability": "code",
             "reward_model": {"style": "rule", "ground_truth": tests},
+            "extra_info": _make_extra_info(dataset_name, idx),
         }
         outputs.append(data)
 
     return Dataset.from_list(outputs)
 
 def main():
-    ds_lcbv5 = load_dataset("agentica-org/DeepCoder-Preview-Dataset", "lcbv5")
+    ds_lcbv5 = load_dataset("agentica-org/DeepCoder-Preview-Dataset", "lcbv5",
+                            revision=HF_REVISIONS["agentica-org/DeepCoder-Preview-Dataset"])
     ds_codecontests = load_json("./data/CodeContests.json")
     ds_codeforces = load_json("./data/CodeForces.json")
     ds_livebench = load_json("./data/LiveBench.json")
