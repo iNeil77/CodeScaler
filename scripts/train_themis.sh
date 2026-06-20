@@ -64,6 +64,13 @@ reward_manager=codescaler
 n_gpus_per_node=8
 n_nodes=1
 tensor_model_parallel_size=1
+# vLLM CUDA graphs for rollout: enforce_eager=False + a set of decode batch sizes to
+# capture graphs for. Decode steps whose batch size matches a captured size skip the
+# Python/kernel-launch overhead (big rollout-latency win); other sizes fall back to
+# eager. Sizes should span 1..max_num_seqs. Set enforce_eager=True (or empty the list)
+# to disable, e.g. if graph capture OOMs at startup.
+enforce_eager=False
+cudagraph_capture_sizes="[1,2,4,8,16,24,32,48,64,96,128,192,256,384,512,768,1024]"
 # Higher gpu_memory_utilization will likely cause vllm to OOM, so set to lower value
 gpu_memory_utilization=0.6
 # Actor FSDP param/optimizer offload. On large-memory GPUs (e.g. H200 143GB) an 8B
@@ -173,6 +180,8 @@ python -m recipe.codescaler.main_codescaler \
     actor_rollout_ref.actor.ulysses_sequence_parallel_size=$ulysses_sequence_parallel_size \
     actor_rollout_ref.rollout.tensor_model_parallel_size=$tensor_model_parallel_size \
     actor_rollout_ref.rollout.name=vllm \
+    actor_rollout_ref.rollout.enforce_eager=$enforce_eager \
+    actor_rollout_ref.rollout.cudagraph_capture_sizes=$cudagraph_capture_sizes \
     actor_rollout_ref.rollout.gpu_memory_utilization=$gpu_memory_utilization \
     actor_rollout_ref.rollout.temperature=$temperature \
     actor_rollout_ref.rollout.val_kwargs.temperature=0.6 \
