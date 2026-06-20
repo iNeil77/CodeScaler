@@ -205,9 +205,11 @@ python -m recipe.codescaler.main_codescaler \
     data.max_prompt_length=$max_prompt_length \
     data.max_response_length=$max_response_length \
     data.truncation='right' \
+    data.trust_remote_code=True \
     reward_model.enable=True \
     reward_model.max_length=4096 \
     reward_model.model.path=$rm_path \
+    reward_model.model.trust_remote_code=True \
     reward_model.model.fsdp_config.fsdp_size=$fsdp_size \
     reward_model.model.fsdp_config.param_offload=True \
     reward_model.reward_manager=$reward_manager \

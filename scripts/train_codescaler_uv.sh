@@ -143,9 +143,11 @@ python -m recipe.codescaler.main_codescaler \
     data.max_prompt_length=$max_prompt_length \
     data.max_response_length=$max_response_length \
     data.truncation='right' \
+    data.trust_remote_code=True \
     reward_model.enable=True \
     reward_model.max_length=4096 \
     reward_model.model.path=$rm_path \
+    reward_model.model.trust_remote_code=True \
     reward_model.model.use_remove_padding=True \
     reward_model.use_dynamic_bsz=$use_dynamic_bsz \
     reward_model.forward_max_token_len_per_gpu=20480 \
