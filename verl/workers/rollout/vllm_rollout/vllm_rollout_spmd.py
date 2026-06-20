@@ -182,9 +182,13 @@ class vLLMRollout(BaseRollout):
         cudagraph_capture_sizes = config.get("cudagraph_capture_sizes")
         # enforce_eager must be False to use cudagraph
         if not config.enforce_eager and cudagraph_capture_sizes:
-            if isinstance(cudagraph_capture_sizes, ListConfig):
+            # config reaches us as a RolloutConfig dataclass, so cudagraph_capture_sizes
+            # is a plain list (not an OmegaConf ListConfig); accept either. CompilationConfig
+            # wants a plain list anyway, so normalize ListConfig -> list.
+            if isinstance(cudagraph_capture_sizes, (list, ListConfig)):
                 compilation_config["compilation_config"] = CompilationConfig(
-                    level=CompilationLevel.PIECEWISE, cudagraph_capture_sizes=cudagraph_capture_sizes
+                    level=CompilationLevel.PIECEWISE,
+                    cudagraph_capture_sizes=list(cudagraph_capture_sizes),
                 )
             else:
                 logger.warning(f"cudagraph_capture_sizes must be a list, but got {cudagraph_capture_sizes}")
