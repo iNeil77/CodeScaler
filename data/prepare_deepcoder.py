@@ -166,6 +166,30 @@ def _is_stdin(item) -> bool:
     return True
 
 
+# Training problems with fewer than this many test cases are dropped (weak reward
+# signal). Validation is left untouched. Today's pinned sources all have >= 5 test
+# cases, so this is a no-op guard on current data but enforces the floor going forward.
+MIN_TRAIN_TEST_CASES = 5
+
+
+def _num_test_cases(item) -> int:
+    """Count test cases regardless of source schema: lcbv5/primeintellect store a list
+    of {input, output, ...}; taco stores a dict {inputs: [...], outputs: [...]}."""
+    try:
+        tests = json.loads(item["tests"])
+    except (KeyError, TypeError, ValueError):
+        return 0
+    if isinstance(tests, dict):
+        return len(tests.get("inputs", []))
+    if isinstance(tests, list):
+        return len(tests)
+    return 0
+
+
+def _has_min_test_cases(item) -> bool:
+    return _num_test_cases(item) >= MIN_TRAIN_TEST_CASES
+
+
 def _build_example(item, idx, data_source, split):
     """Transform one raw record into the training schema. Pure function of (item, idx,
     data_source, split) so it is safe to run under datasets.map(num_proc=..., with_indices=True)."""
@@ -221,6 +245,13 @@ def _map_source(ds, data_source, split):
     ds = ds.filter(_is_stdin, num_proc=_num_proc(len(ds)), desc=f"Filtering {data_source} -> stdin only")
     if len(ds) != n_before:
         print(f"  {data_source}: kept {len(ds)}/{n_before} stdin/stdout problems (dropped {n_before - len(ds)} function-style)")
+    # Training only: drop problems with too few test cases (weak reward signal).
+    if split == "train":
+        n_pre = len(ds)
+        ds = ds.filter(_has_min_test_cases, num_proc=_num_proc(len(ds)),
+                       desc=f"Filtering {data_source} -> >= {MIN_TRAIN_TEST_CASES} tests")
+        if len(ds) != n_pre:
+            print(f"  {data_source}: kept {len(ds)}/{n_pre} with >= {MIN_TRAIN_TEST_CASES} test cases (dropped {n_pre - len(ds)})")
     # The ground_truth test strings can be very large: lcbv5 has individual blobs up to
     # ~200MB, so even a few per Arrow chunk overflow pyarrow's 2GB 32-bit offset
     # ("offset overflow while concatenating arrays"). Use batch size 1 for lcbv5 (small
