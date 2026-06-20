@@ -6,7 +6,25 @@ import os
 import pickle
 import uuid
 import zlib
-from datasets import Dataset, concatenate_datasets
+from datasets import Dataset, concatenate_datasets, Features, Sequence, Value
+
+
+def _cast_ground_truth_large(ds):
+    """Store reward_model.ground_truth as Arrow large_string (64-bit offsets).
+
+    Some lcbv5/lcbv6 ground_truth blobs are ~200MB; as a plain `string` (int32
+    offsets, 2.1GB/array limit), a consumer that concatenates all rows -- e.g.
+    `Dataset.from_parquet` calling pa.Table.combine_chunks() -- overflows with
+    "offset overflow while concatenating arrays". large_string removes that ceiling.
+    The stored values are unchanged (JSON text), so json.loads downstream is unaffected.
+    """
+    feats = ds.features.copy()
+    rm = feats["reward_model"]  # {"style": Value, "ground_truth": Value}
+    if rm["ground_truth"].dtype != "large_string":
+        rm["ground_truth"] = Value("large_string")
+        feats["reward_model"] = rm
+        ds = ds.cast(feats)
+    return ds
 
 
 # Pinned HF dataset revisions for reproducibility. Resolved 2026-06-20; update
@@ -301,8 +319,13 @@ def main():
     ds_train = ds_train.shuffle(seed=42)
     ds_val = ds_val.shuffle(seed=42)
 
-    # lcbv5/lcbv6 ground_truth blobs reach ~200MB; batch_size=1 avoids pyarrow's 2GB
-    # offset overflow on write.
+    # Store ground_truth as large_string so consumers can load/concatenate the whole
+    # split without overflowing pyarrow's 2GB int32 string-offset limit.
+    ds_train = _cast_ground_truth_large(ds_train)
+    ds_val = _cast_ground_truth_large(ds_val)
+
+    # batch_size=1 also keeps the *write* under the per-chunk 2GB limit for the ~200MB
+    # lcbv5/lcbv6 blobs.
     ds_train.to_parquet("./datasets/DeepCoder/train.parquet", batch_size=1)
     ds_val.to_parquet("./datasets/DeepCoder/val.parquet", batch_size=1)
 

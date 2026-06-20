@@ -5,6 +5,20 @@ import os
 import uuid
 from datasets import Dataset
 from datasets import concatenate_datasets
+from datasets import Value
+
+
+def _cast_ground_truth_large(ds):
+    """Store reward_model.ground_truth as Arrow large_string (64-bit offsets) so
+    consumers can load/concatenate the whole split without overflowing pyarrow's 2GB
+    int32 string-offset limit (lcbv5 ground_truth blobs reach ~200MB). Values unchanged."""
+    feats = ds.features.copy()
+    rm = feats["reward_model"]
+    if rm["ground_truth"].dtype != "large_string":
+        rm["ground_truth"] = Value("large_string")
+        feats["reward_model"] = rm
+        ds = ds.cast(feats)
+    return ds
 
 
 # Pinned HF dataset revisions (resolved 2026-06-20). Mirrors data/prepare_deepcoder.py
@@ -190,10 +204,10 @@ def main():
     split = "test"
     ds_test_lcbv5 = construct_lcb(ds_lcbv5[split])
     ds_all.append(ds_test_lcbv5)
-    # Small Arrow write batches: lcbv5 ground_truth blobs reach ~200MB, so the default
-    # batch size overflows pyarrow's 2GB offset. 1 row/batch for lcbv5 and the combined
-    # set (which includes lcbv5); a small batch for the lighter JSON benchmarks.
-    ds_test_lcbv5.to_parquet("./datasets/Evaluation/LiveCodeBench.parquet", batch_size=1)
+    # Store ground_truth as large_string (lcbv5 blobs reach ~200MB) so HF can load and
+    # concatenate the whole split without overflowing pyarrow's 2GB int32 offset limit.
+    # batch_size=1 also keeps the *write* under the per-chunk limit.
+    _cast_ground_truth_large(ds_test_lcbv5).to_parquet("./datasets/Evaluation/LiveCodeBench.parquet", batch_size=1)
 
     dataset_names = {'CodeContests': ds_codecontests,
                      'CodeForces': ds_codeforces,
@@ -202,10 +216,10 @@ def main():
     for dataset_name in dataset_names:
         ds_test = construct_test_dataset(dataset_names[dataset_name], dataset_name)
         ds_all.append(ds_test)
-        ds_test.to_parquet(f"./datasets/Evaluation/{dataset_name}.parquet", batch_size=64)
+        _cast_ground_truth_large(ds_test).to_parquet(f"./datasets/Evaluation/{dataset_name}.parquet", batch_size=64)
 
-    # combine
-    ds_combine = concatenate_datasets(ds_all)
+    # combine (includes lcbv5 -> large blobs)
+    ds_combine = _cast_ground_truth_large(concatenate_datasets(ds_all))
     ds_combine.to_parquet("./datasets/Evaluation/All.parquet", batch_size=1)
 
 
