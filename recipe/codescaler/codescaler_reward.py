@@ -295,6 +295,12 @@ class CodeScalerRewardManager:
             extracted_codes = [extract_code_from_model(response) for response in responses_str]
             for i in range(len(data)):
                 reward_tensor[i, valid_response_length[i].item() - 1] = transform_score(sum(data[i].batch['rm_scores']).item(), extracted_codes[i]==EMTPY_STRING, self.reward_shaping)
+            # Honor return_dict like the other branches. verl's compute_reward calls this
+            # with return_dict=True and indexes reward_result["reward_tensor"]; returning a
+            # bare tensor here made that raise ("too many indices for tensor of dimension
+            # 2"), forcing a costly fallback that re-ran the whole reward pass every step.
+            if return_dict:
+                return {"reward_tensor": reward_tensor, "reward_extra_info": {}}
             return reward_tensor
 
         # extract the answer for the list of responses

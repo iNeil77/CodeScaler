@@ -65,9 +65,11 @@ n_gpus_per_node=8
 n_nodes=1
 tensor_model_parallel_size=1
 # Higher gpu_memory_utilization will likely cause vllm to OOM, so set to lower value
-gpu_memory_utilization=0.8
-# Control actor's fsdp offloading; if gpu_memory_utilization > 0.6, should be True to avoid OOM
-do_offload=True
+gpu_memory_utilization=0.6
+# Actor FSDP param/optimizer offload. On large-memory GPUs (e.g. H200 143GB) an 8B
+# policy + 8B RM fit without offload, so keep it off to avoid the per-step CPU<->GPU
+# param/optimizer shuffle. Set True if you OOM on smaller cards.
+do_offload=False
 strategy="fsdp"
 
 # ============================================================================
@@ -138,6 +140,9 @@ python -m recipe.codescaler.main_codescaler \
     reward_model.enable=True \
     reward_model.max_length=4096 \
     reward_model.model.path=$rm_path \
+    reward_model.model.use_remove_padding=True \
+    reward_model.use_dynamic_bsz=$use_dynamic_bsz \
+    reward_model.forward_max_token_len_per_gpu=20480 \
     reward_model.reward_manager=$reward_manager \
     reward_model.launch_reward_fn_async=True \
     +reward_model.record_dir=$ROOT \
