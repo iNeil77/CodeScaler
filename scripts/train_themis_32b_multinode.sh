@@ -249,7 +249,7 @@ python -m recipe.codescaler.main_codescaler \
     trainer.nnodes=$n_nodes \
     +trainer.remove_previous_ckpt_in_save=False \
     trainer.save_freq=50 \
-    trainer.test_freq=10 \
+    trainer.test_freq=20 \
     trainer.total_training_steps=250 "${@:1}" 2>&1 | tee $OUTPUT_DIR/train.log
 
 
