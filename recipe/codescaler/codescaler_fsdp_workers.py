@@ -1,11 +1,8 @@
-from verl.workers.fsdp_workers import ActorRolloutRefWorker, Worker, DictConfig
+from verl.workers.fsdp_workers import Worker
 from verl.workers.fsdp_workers import *
-from verl.utils.debug.performance import simple_timer
 from verl.protocol import DataProto
 from recipe.codescaler.codescaler_utils import *
 from recipe.codescaler.acecoder import *
-import re
-import ast
 
 
 # Functional-correctness system prompt for the Themis suite of scalar reward models

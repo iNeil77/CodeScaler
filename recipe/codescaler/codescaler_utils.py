@@ -3,7 +3,6 @@ import re
 import json
 import multiprocessing
 import ast
-import numpy as np
 
 from recipe.codescaler.codescaler_reward_types import RewardOutput
 from recipe.codescaler.livecodebench import run_test as lcb_run_test

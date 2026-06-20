@@ -11,35 +11,21 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-import subprocess
-import tempfile
-import difflib
 import asyncio
 import regex as re
-import hashlib
-import random
 import os
 import json
-import ast
 import numpy as np
 from pathlib import Path
-from collections import Counter
 import psutil
-from concurrent.futures import ThreadPoolExecutor
-import concurrent.futures
 from concurrent.futures import ProcessPoolExecutor
 from functools import partial
 from collections import defaultdict
 import time
 import torch
-import textwrap
-from tqdm import tqdm
 from verl import DataProto
 import ray
 
-import asyncio
-from verl.utils.reward_score.prime_code import compute_score as prime_code_compute_score
-from verl.workers.reward_manager.prime import parallel_compute_score_async
 from verl.workers.reward_manager import register
 from verl.utils.reward_score import default_compute_score
 from recipe.codescaler import get_reward_manager_cls
